@@ -1,5 +1,8 @@
 import { Sidebar } from '@/components/layout/Sidebar'
 
+// Force dynamic rendering - dashboard requires auth
+export const dynamic = 'force-dynamic'
+
 export default function DashboardLayout({
   children,
 }: {
