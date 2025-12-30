@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   X,
+  Webhook,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -18,6 +19,7 @@ const navigation = [
   { name: 'Transcripts', href: '/transcripts', icon: FileText },
   { name: 'Content Generator', href: '/generator', icon: Sparkles },
   { name: 'Search Videos', href: '/search', icon: Search },
+  { name: 'Webhooks', href: '/webhooks', icon: Webhook },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
 

@@ -1,52 +1,61 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Filter, Plus, Loader2 } from 'lucide-react'
+import { Search, Filter, Plus, Loader2, ExternalLink, Clock, Eye, Calendar } from 'lucide-react'
 
 interface VideoResult {
   id: string
   title: string
-  channel: string
+  channelTitle: string
   description: string
-  thumbnail: string
-  duration: string
+  thumbnailUrl: string
+  publishedAt: string
+  viewCount?: string
+  duration?: string
 }
 
 export default function SearchPage() {
   const [query, setQuery] = useState('')
   const [maxResults, setMaxResults] = useState(10)
-  const [sortBy, setSortBy] = useState('relevance')
-  const [duration, setDuration] = useState('any')
-  const [uploadDate, setUploadDate] = useState('any')
+  const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'rating' | 'viewCount' | 'title'>('relevance')
+  const [duration, setDuration] = useState<'any' | 'short' | 'medium' | 'long'>('any')
+  const [uploadDate, setUploadDate] = useState<'any' | 'day' | 'week' | 'month' | 'year'>('any')
   const [showFilters, setShowFilters] = useState(false)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<VideoResult[]>([])
   const [selectedVideos, setSelectedVideos] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [addingToQueue, setAddingToQueue] = useState(false)
 
   const handleSearch = async () => {
+    if (!query.trim()) return
+
     setLoading(true)
-    // TODO: Implement YouTube search via API route
-    setTimeout(() => {
+    setError(null)
+    setResults([])
+
+    try {
+      const params = new URLSearchParams({
+        query: query,
+        maxResults: maxResults.toString(),
+        order: sortBy,
+        videoDuration: duration,
+        publishedAfter: uploadDate,
+      })
+
+      const response = await fetch(`/api/youtube/search?${params}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Search failed')
+      }
+
+      setResults(data.videos || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Search failed')
+    } finally {
       setLoading(false)
-      setResults([
-        {
-          id: 'demo1',
-          title: 'Example Video Title That Might Be Long',
-          channel: 'Example Channel',
-          description: 'This is a description of the video content...',
-          thumbnail: '/placeholder.jpg',
-          duration: '12:34',
-        },
-        {
-          id: 'demo2',
-          title: 'Another Great Video About the Topic',
-          channel: 'Another Channel',
-          description: 'Another description here with more details...',
-          thumbnail: '/placeholder.jpg',
-          duration: '8:45',
-        },
-      ])
-    }, 1500)
+    }
   }
 
   const toggleVideoSelection = (id: string) => {
@@ -55,10 +64,61 @@ export default function SearchPage() {
     )
   }
 
-  const addToQueue = () => {
-    // TODO: Add selected videos to transcript queue
-    alert(`Added ${selectedVideos.length} videos to transcript queue`)
-    setSelectedVideos([])
+  const addToQueue = async () => {
+    if (selectedVideos.length === 0) return
+
+    setAddingToQueue(true)
+
+    try {
+      const urls = selectedVideos.map(id => `https://www.youtube.com/watch?v=${id}`)
+
+      const response = await fetch('/api/transcripts/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          urls,
+          includeTimestamps: false,
+          enableFallback: true,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to add to queue')
+      }
+
+      const data = await response.json()
+      const successCount = data.successful?.length || 0
+      const failCount = data.failed?.length || 0
+
+      alert(`Added ${successCount} transcript(s) to your library. ${failCount > 0 ? `${failCount} failed.` : ''}`)
+      setSelectedVideos([])
+    } catch (err) {
+      alert('Failed to add videos to transcript queue')
+    } finally {
+      setAddingToQueue(false)
+    }
+  }
+
+  const formatViewCount = (count?: string) => {
+    if (!count) return null
+    const num = parseInt(count, 10)
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M views`
+    if (num >= 1000) return `${(num / 1000).toFixed(0)}K views`
+    return `${num} views`
+  }
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) return 'Today'
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return `${diffDays} days ago`
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`
+    return `${Math.floor(diffDays / 365)} years ago`
   }
 
   return (
@@ -129,13 +189,14 @@ export default function SearchPage() {
               </label>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
               >
                 <option value="relevance">Relevance</option>
                 <option value="date">Date</option>
                 <option value="viewCount">View Count</option>
                 <option value="rating">Rating</option>
+                <option value="title">Title</option>
               </select>
             </div>
 
@@ -145,7 +206,7 @@ export default function SearchPage() {
               </label>
               <select
                 value={duration}
-                onChange={(e) => setDuration(e.target.value)}
+                onChange={(e) => setDuration(e.target.value as typeof duration)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
               >
                 <option value="any">Any</option>
@@ -161,7 +222,7 @@ export default function SearchPage() {
               </label>
               <select
                 value={uploadDate}
-                onChange={(e) => setUploadDate(e.target.value)}
+                onChange={(e) => setUploadDate(e.target.value as typeof uploadDate)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
               >
                 <option value="any">Any Time</option>
@@ -174,6 +235,13 @@ export default function SearchPage() {
           </div>
         )}
 
+        {/* Error Message */}
+        {error && (
+          <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+          </div>
+        )}
+
         {/* Selected Videos Actions */}
         {selectedVideos.length > 0 && (
           <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
@@ -182,10 +250,20 @@ export default function SearchPage() {
             </span>
             <button
               onClick={addToQueue}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              disabled={addingToQueue}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              Add to Transcript Queue
+              {addingToQueue ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  Add to Transcript Queue
+                </>
+              )}
             </button>
           </div>
         )}
@@ -193,6 +271,9 @@ export default function SearchPage() {
         {/* Results */}
         {results.length > 0 && (
           <div className="space-y-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Found {results.length} videos
+            </p>
             {results.map((video) => (
               <div
                 key={video.id}
@@ -203,30 +284,87 @@ export default function SearchPage() {
                     : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                 }`}
               >
-                <div className="w-40 h-24 bg-gray-200 dark:bg-gray-600 rounded-lg flex-shrink-0 flex items-center justify-center text-gray-400">
-                  {video.duration}
+                {/* Thumbnail */}
+                <div className="w-40 h-24 bg-gray-200 dark:bg-gray-600 rounded-lg flex-shrink-0 overflow-hidden">
+                  {video.thumbnailUrl ? (
+                    <img
+                      src={video.thumbnailUrl}
+                      alt={video.title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                      No thumbnail
+                    </div>
+                  )}
                 </div>
+
+                {/* Video Info */}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-2">
                     {video.title}
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {video.channel}
+                    {video.channelTitle}
                   </p>
+                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {video.viewCount && (
+                      <span className="flex items-center gap-1">
+                        <Eye className="w-3 h-3" />
+                        {formatViewCount(video.viewCount)}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {formatDate(video.publishedAt)}
+                    </span>
+                  </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
                     {video.description}
                   </p>
                 </div>
-                <div className="flex items-center">
+
+                {/* Actions */}
+                <div className="flex flex-col items-end gap-2">
                   <input
                     type="checkbox"
                     checked={selectedVideos.includes(video.id)}
                     onChange={() => {}}
                     className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
+                  <a
+                    href={`https://youtube.com/watch?v=${video.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Watch
+                  </a>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && results.length === 0 && query && !error && (
+          <div className="text-center py-12">
+            <Search className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
+            <p className="mt-4 text-gray-500 dark:text-gray-400">
+              No videos found. Try a different search term.
+            </p>
+          </div>
+        )}
+
+        {/* Initial State */}
+        {!loading && results.length === 0 && !query && (
+          <div className="text-center py-12">
+            <Search className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
+            <p className="mt-4 text-gray-500 dark:text-gray-400">
+              Enter a search term to find YouTube videos
+            </p>
           </div>
         )}
       </div>
