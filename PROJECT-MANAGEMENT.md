@@ -9,143 +9,239 @@
 
 ---
 
-## Current Sprint: Phase 1 - Core APIs
+## Project Status: Phase 4 Complete
 
-### In Progress
-- [ ] Utility functions and validators
-- [ ] Prompt template system
-- [ ] Service layer (8 services)
-- [ ] Transcript fetching API
-- [ ] YouTube search API
+**Last Updated:** December 30, 2024
 
-### Up Next
-- [ ] Content generation API
-- [ ] Tone profile APIs
+The core application is now fully functional with all API routes implemented and frontend pages integrated.
+
+### Summary
+- **Total Files Created:** 50+
+- **API Routes:** 17 endpoints
+- **Dashboard Pages:** 5 (Transcripts, Search, Generator, Settings, Webhooks)
+- **Services:** 9 backend services
+- **Build Status:** Passing
 
 ---
 
 ## Feature Roadmap
 
 ### Completed
+
+#### Infrastructure
 - [x] Project scaffold (Next.js 14, TypeScript, Tailwind)
 - [x] Supabase integration (auth, database)
-- [x] UI scaffolds for all dashboard pages
-- [x] Database schema v1 (profiles, projects, transcripts, content, tones)
 - [x] Vercel deployment with environment variables
 - [x] GitHub repository connected
 - [x] Authentication system (login, signup, OAuth)
+- [x] Database schema (profiles, projects, transcripts, content, tones, webhooks)
 
-### Phase 1: Foundation (Current)
-| Task | Status | Files |
-|------|--------|-------|
-| YouTube URL parser | Pending | `src/lib/utils/youtube-parser.ts` |
-| Input validators (Zod) | Pending | `src/lib/utils/validators.ts` |
-| Text formatter | Pending | `src/lib/utils/text-formatter.ts` |
-| URL scraper | Pending | `src/lib/utils/scraper.ts` |
-| Content generation prompts | Pending | `src/lib/prompts/content-generation.ts` |
-| SEO analysis prompts | Pending | `src/lib/prompts/seo-analysis.ts` |
-| Tone analysis prompts | Pending | `src/lib/prompts/tone-analysis.ts` |
-| Image generation prompts | Pending | `src/lib/prompts/image-generation.ts` |
-| Transcript service | Pending | `src/lib/services/transcript.service.ts` |
-| YouTube service | Pending | `src/lib/services/youtube.service.ts` |
-| Claude service | Pending | `src/lib/services/claude.service.ts` |
-| Gemini service | Pending | `src/lib/services/gemini.service.ts` |
-| Groq service | Pending | `src/lib/services/groq.service.ts` |
-| SEO service | Pending | `src/lib/services/seo.service.ts` |
-| Tone service | Pending | `src/lib/services/tone.service.ts` |
-| Webhook service | Pending | `src/lib/services/webhook.service.ts` |
+#### Phase 1: Foundation (Utilities & Prompts)
+- [x] YouTube URL parser (`src/lib/utils/youtube-parser.ts`)
+- [x] Input validators with Zod (`src/lib/utils/validators.ts`)
+- [x] Text formatter (`src/lib/utils/text-formatter.ts`)
+- [x] URL scraper (`src/lib/utils/scraper.ts`)
+- [x] Content generation prompts (`src/lib/prompts/content-generation.ts`)
+- [x] SEO analysis prompts (`src/lib/prompts/seo-analysis.ts`)
+- [x] Tone analysis prompts (`src/lib/prompts/tone-analysis.ts`)
+- [x] Image generation prompts (`src/lib/prompts/image-generation.ts`)
 
-### Phase 2: APIs
-| Task | Status | Files |
-|------|--------|-------|
-| Transcript API (list, fetch) | Pending | `src/app/api/transcripts/route.ts` |
-| Transcript API (single, delete) | Pending | `src/app/api/transcripts/[id]/route.ts` |
-| Transcript batch API | Pending | `src/app/api/transcripts/batch/route.ts` |
-| YouTube search API | Pending | `src/app/api/youtube/search/route.ts` |
-| Tone list/create API | Pending | `src/app/api/tones/route.ts` |
-| Tone CRUD API | Pending | `src/app/api/tones/[id]/route.ts` |
-| Tone analyze API | Pending | `src/app/api/tones/analyze/route.ts` |
-| Content generation API | Pending | `src/app/api/generate/route.ts` |
-| Image generation API | Pending | `src/app/api/generate/image/route.ts` |
-| SEO analysis API | Pending | `src/app/api/seo/route.ts` |
+#### Phase 2: Service Layer
+- [x] Transcript service (`src/lib/services/transcript.service.ts`)
+- [x] YouTube service (`src/lib/services/youtube.service.ts`)
+- [x] Claude service (`src/lib/services/claude.service.ts`)
+- [x] Gemini service (`src/lib/services/gemini.service.ts`)
+- [x] Groq/Whisper service (`src/lib/services/groq.service.ts`)
+- [x] SEO service (`src/lib/services/seo.service.ts`)
+- [x] Tone service (`src/lib/services/tone.service.ts`)
+- [x] Webhook service (`src/lib/services/webhook.service.ts`)
+- [x] Content service (`src/lib/services/content.service.ts`)
 
-### Phase 3: Webhooks
-| Task | Status | Files |
-|------|--------|-------|
-| Webhook DB migration | Pending | `supabase/migrations/...webhook_system.sql` |
-| Webhook list/create API | Pending | `src/app/api/webhooks/route.ts` |
-| Webhook CRUD API | Pending | `src/app/api/webhooks/[id]/route.ts` |
-| Webhook test API | Pending | `src/app/api/webhooks/[id]/test/route.ts` |
-| Webhook trigger API | Pending | `src/app/api/webhooks/trigger/route.ts` |
-| Webhook templates | Pending | `src/lib/services/webhook-templates.ts` |
-| Webhook management UI | Pending | `src/app/(dashboard)/webhooks/page.tsx` |
+#### Phase 3: API Routes
+| Endpoint | Method | Status |
+|----------|--------|--------|
+| `/api/transcripts` | GET, POST | Done |
+| `/api/transcripts/[id]` | GET, DELETE | Done |
+| `/api/transcripts/batch` | POST | Done |
+| `/api/youtube/search` | GET | Done |
+| `/api/tones` | GET, POST | Done |
+| `/api/tones/[id]` | GET, PUT, DELETE | Done |
+| `/api/tones/analyze` | POST | Done |
+| `/api/generate` | POST | Done |
+| `/api/generate/[id]` | GET, DELETE | Done |
+| `/api/generate/image` | POST | Done |
+| `/api/seo` | POST | Done |
+| `/api/webhooks` | GET, POST | Done |
+| `/api/webhooks/[id]` | GET, PUT, DELETE | Done |
+| `/api/webhooks/[id]/test` | POST | Done |
+| `/api/webhooks/trigger` | POST | Done |
 
-**Pre-built Templates:**
-- [ ] WordPress REST API
-- [ ] Zapier webhooks
-- [ ] Make (Integromat) webhooks
-- [ ] N8N webhooks
-- [ ] Notion API
-- [ ] Custom JSON (user-defined)
-
-### Phase 4: Frontend Integration
-| Task | Status | Files |
-|------|--------|-------|
-| Transcripts page API integration | Pending | `src/app/(dashboard)/transcripts/page.tsx` |
-| Search page API integration | Pending | `src/app/(dashboard)/search/page.tsx` |
-| Generator page API integration | Pending | `src/app/(dashboard)/generator/page.tsx` |
-| Settings page API integration | Pending | `src/app/(dashboard)/settings/page.tsx` |
-
-### Phase 5: Polish
-- [ ] Error handling improvements
-- [ ] Loading states and optimistic updates
-- [ ] Rate limiting
-- [ ] Usage analytics
+#### Phase 4: Frontend Integration
+- [x] Transcripts page - fetch, batch, list, delete, download
+- [x] Search page - YouTube search, filters, batch add to queue
+- [x] Generator page - content generation, image generation, SEO analysis
+- [x] Settings page - tone profile CRUD, analysis
+- [x] Webhooks page - templates, CRUD, testing, execution logs
+- [x] Sidebar navigation updated
 
 ---
 
-## Known Issues / Blockers
+## Current Sprint: Phase 5 - Polish
 
-| Issue | Impact | Workaround |
-|-------|--------|------------|
-| yt-dlp on Vercel serverless | May timeout for long videos | Consider external service or Vercel Pro |
+### In Progress
+- [ ] Error handling improvements (user-friendly error messages)
+- [ ] Loading states and skeleton components
+- [ ] Toast notifications for actions
+
+### Up Next
+- [ ] Rate limiting on API routes
+- [ ] Input sanitization review
+- [ ] Usage analytics/metrics
+
+---
+
+## Known Issues / Technical Debt
+
+| Issue | Impact | Status |
+|-------|--------|--------|
+| yt-dlp on Vercel serverless | May timeout for long videos (>10min) | Using cobalt.tools API as fallback |
+| Supabase types workaround | Using `AnySupabase` type alias | Works, but not type-safe |
+| Image generation | Gemini API may have rate limits | Consider caching or alternatives |
+| No streaming for content generation | UX could be improved | Streaming support exists in service layer |
+
+---
+
+## Environment Variables Required
+
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# AI Services
+ANTHROPIC_API_KEY=         # Claude for content generation
+GOOGLE_AI_API_KEY=         # Gemini for image generation
+GROQ_API_KEY=              # Whisper for audio transcription
+
+# YouTube
+YOUTUBE_API_KEY=           # YouTube Data API v3
+```
 
 ---
 
 ## Future Enhancements (Backlog)
 
+### High Priority
+- [ ] Streaming content generation (show text as it's generated)
+- [ ] Content history/versioning
+- [ ] Bulk operations (delete multiple transcripts)
+- [ ] Export to multiple formats (MD, HTML, DOCX)
+
+### Medium Priority
 - [ ] Team/workspace support
 - [ ] API key management per user (bring your own keys)
 - [ ] Scheduled content generation
 - [ ] Content calendar integration
+
+### Low Priority
 - [ ] A/B testing for content variants
 - [ ] Analytics dashboard
-- [ ] Mobile app
+- [ ] Mobile app (React Native)
+- [ ] Browser extension for quick capture
+
+---
+
+## Webhook Templates Available
+
+| Template | Endpoint Example | Auth Type |
+|----------|-----------------|-----------|
+| WordPress REST API | `your-site.com/wp-json/wp/v2/posts` | Bearer |
+| Zapier Webhook | `hooks.zapier.com/hooks/catch/...` | None |
+| Make (Integromat) | `hook.make.com/...` | None |
+| N8N Webhook | `your-n8n.com/webhook/...` | None |
+| Notion API | `api.notion.com/v1/pages` | Bearer |
+| Custom JSON | User-defined | Configurable |
 
 ---
 
 ## API Reference
 
+### Transcripts
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/transcripts` | GET | List user's transcripts |
-| `/api/transcripts` | POST | Fetch single transcript |
-| `/api/transcripts/batch` | POST | Batch fetch transcripts |
-| `/api/transcripts/[id]` | GET | Get single transcript |
+| `/api/transcripts` | POST | Fetch single transcript from YouTube URL |
+| `/api/transcripts/batch` | POST | Batch fetch up to 50 transcripts |
+| `/api/transcripts/[id]` | GET | Get single transcript with content |
 | `/api/transcripts/[id]` | DELETE | Delete transcript |
-| `/api/youtube/search` | GET | Search YouTube videos |
-| `/api/generate` | POST | Generate content |
-| `/api/generate/image` | POST | Generate image |
-| `/api/seo` | POST | Analyze SEO |
-| `/api/tones` | GET | List tone profiles |
-| `/api/tones` | POST | Create tone profile |
-| `/api/tones/[id]` | GET/PUT/DELETE | Tone profile CRUD |
-| `/api/tones/analyze` | POST | Analyze writing sample |
-| `/api/webhooks` | GET | List webhooks |
-| `/api/webhooks` | POST | Create webhook |
-| `/api/webhooks/[id]` | GET/PUT/DELETE | Webhook CRUD |
-| `/api/webhooks/[id]/test` | POST | Test webhook |
-| `/api/webhooks/trigger` | POST | Trigger webhook |
+
+### YouTube
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/youtube/search` | GET | Search YouTube videos with filters |
+
+### Content Generation
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/generate` | POST | Generate content from transcripts |
+| `/api/generate/[id]` | GET | Get generated content |
+| `/api/generate/[id]` | DELETE | Delete generated content |
+| `/api/generate/image` | POST | Generate image for content |
+| `/api/seo` | POST | Analyze content for SEO |
+
+### Tone Profiles
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tones` | GET | List user's tone profiles |
+| `/api/tones` | POST | Create new tone profile |
+| `/api/tones/[id]` | GET | Get tone profile |
+| `/api/tones/[id]` | PUT | Update tone profile |
+| `/api/tones/[id]` | DELETE | Delete tone profile |
+| `/api/tones/analyze` | POST | Analyze text/URL for style DNA |
+
+### Webhooks
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/webhooks` | GET | List user's webhooks |
+| `/api/webhooks` | POST | Create new webhook |
+| `/api/webhooks/[id]` | GET | Get webhook with execution logs |
+| `/api/webhooks/[id]` | PUT | Update webhook |
+| `/api/webhooks/[id]` | DELETE | Delete webhook |
+| `/api/webhooks/[id]/test` | POST | Test webhook with sample data |
+| `/api/webhooks/trigger` | POST | Trigger webhook for content |
+
+---
+
+## Architecture Overview
+
+```
+src/
+├── app/
+│   ├── (auth)/           # Login, Signup pages
+│   ├── (dashboard)/      # Protected pages
+│   │   ├── transcripts/
+│   │   ├── search/
+│   │   ├── generator/
+│   │   ├── settings/
+│   │   └── webhooks/
+│   └── api/              # API routes
+│       ├── transcripts/
+│       ├── youtube/
+│       ├── generate/
+│       ├── seo/
+│       ├── tones/
+│       └── webhooks/
+├── components/
+│   └── layout/           # Sidebar, etc.
+├── hooks/                # useAuth, etc.
+├── lib/
+│   ├── prompts/          # AI prompt templates
+│   ├── services/         # Business logic
+│   ├── supabase/         # Database client
+│   └── utils/            # Helpers
+└── types/                # TypeScript types
+```
 
 ---
 
@@ -154,3 +250,6 @@
 - Original Python app location: `/mnt/c/Projects/yts`
 - Key prompts are in `Content_Generator.py` (anti-cliché system)
 - Tone DNA format example: `/mnt/c/Projects/yts/tone_profiles/OnlyOneMike Long Form Style.txt`
+- Claude model: `claude-sonnet-4-20250514`
+- Gemini model: `gemini-2.0-flash-preview-image-generation`
+- Whisper model: `whisper-large-v3` (via Groq)
