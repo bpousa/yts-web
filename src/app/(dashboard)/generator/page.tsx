@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw, Mic, Download, Play } from 'lucide-react'
+import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw, Mic, Download, Play, Pause, Volume2, Library, Wand2 } from 'lucide-react'
 import { SkeletonContentGenerator } from '@/components/ui/Skeleton'
+import { VoiceLibraryModal, VoiceDesignerModal } from '@/components/voices'
 
 interface Transcript {
   id: string
@@ -46,6 +47,19 @@ interface PodcastJob {
   audioUrl?: string
   duration?: number
   error?: string
+}
+
+interface SavedVoice {
+  id: string
+  voice_id: string
+  name: string
+  description: string | null
+  gender: string | null
+  accent: string | null
+  preview_url: string | null
+  source: 'library' | 'designed' | 'cloned'
+  is_default_host1: boolean
+  is_default_host2: boolean
 }
 
 const podcastDurations = [
@@ -145,12 +159,34 @@ export default function GeneratorPage() {
   const [podcastJob, setPodcastJob] = useState<PodcastJob | null>(null)
   const [expandedSegment, setExpandedSegment] = useState<number | null>(null)
 
+  // Voice Selection State
+  const [savedVoices, setSavedVoices] = useState<SavedVoice[]>([])
+  const [loadingVoices, setLoadingVoices] = useState(true)
+  const [host1Voice, setHost1Voice] = useState<string | null>(null)
+  const [host2Voice, setHost2Voice] = useState<string | null>(null)
+  const [generateAudio, setGenerateAudio] = useState(false)
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
+  const [showVoiceLibrary, setShowVoiceLibrary] = useState(false)
+  const [showVoiceDesigner, setShowVoiceDesigner] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
   const contentRef = useRef<HTMLPreElement>(null)
 
   // Fetch transcripts on mount
   useEffect(() => {
     fetchTranscripts()
     fetchToneProfiles()
+    fetchSavedVoices()
+  }, [])
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
   }, [])
 
   const fetchTranscripts = async () => {
@@ -172,6 +208,93 @@ export default function GeneratorPage() {
       setToneProfiles(data.profiles || [])
     } catch (err) {
       console.error('Failed to fetch tone profiles:', err)
+    }
+  }
+
+  const fetchSavedVoices = async () => {
+    try {
+      const response = await fetch('/api/voices')
+      const data = await response.json()
+      const voices = data.voices || []
+      setSavedVoices(voices)
+
+      // Set default voices if they exist
+      const defaultHost1 = voices.find((v: SavedVoice) => v.is_default_host1)
+      const defaultHost2 = voices.find((v: SavedVoice) => v.is_default_host2)
+      if (defaultHost1) setHost1Voice(defaultHost1.voice_id)
+      if (defaultHost2) setHost2Voice(defaultHost2.voice_id)
+    } catch (err) {
+      console.error('Failed to fetch voices:', err)
+    } finally {
+      setLoadingVoices(false)
+    }
+  }
+
+  const playVoicePreview = (voice: SavedVoice) => {
+    if (!voice.preview_url) return
+
+    if (playingVoiceId === voice.voice_id) {
+      stopAudio()
+      return
+    }
+
+    stopAudio()
+
+    const audio = new Audio(voice.preview_url)
+    audio.onended = () => setPlayingVoiceId(null)
+    audio.onerror = () => setPlayingVoiceId(null)
+    audio.play()
+    audioRef.current = audio
+    setPlayingVoiceId(voice.voice_id)
+  }
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    setPlayingVoiceId(null)
+  }
+
+  const handleSaveVoiceFromLibrary = async (voice: {
+    voice_id: string
+    name: string
+    preview_url: string | null
+    gender: string | null
+    accent: string | null
+    age: string | null
+    description: string | null
+  }) => {
+    try {
+      const response = await fetch('/api/voices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice_id: voice.voice_id,
+          name: voice.name,
+          description: voice.description,
+          gender: voice.gender,
+          accent: voice.accent,
+          age: voice.age,
+          preview_url: voice.preview_url,
+          source: 'library',
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save voice')
+      }
+
+      setSavedVoices((prev) => [data.voice, ...prev])
+      toast.success(`"${voice.name}" saved to your voices`)
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already saved')) {
+        toast.info('Voice already saved to your profile')
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to save voice')
+      }
     }
   }
 
@@ -339,11 +462,57 @@ export default function GeneratorPage() {
 
       setPodcastJob(data.job)
       toast.success('Podcast script generated successfully')
+
+      // If audio generation is enabled, start it
+      if (generateAudio && host1Voice && host2Voice && data.job?.id) {
+        await handleGenerateAudio(data.job.id)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Podcast generation failed'
       toast.error(message)
     } finally {
       setGeneratingPodcast(false)
+    }
+  }
+
+  const handleGenerateAudio = async (jobId?: string) => {
+    const id = jobId || podcastJob?.id
+    if (!id) {
+      toast.error('No podcast job to generate audio for')
+      return
+    }
+
+    if (!host1Voice || !host2Voice) {
+      toast.error('Please select voices for both hosts')
+      return
+    }
+
+    // Update job status locally
+    setPodcastJob(prev => prev ? { ...prev, status: 'generating_audio', progress: 0 } : null)
+
+    try {
+      const response = await fetch(`/api/generate/podcast/${id}/audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voiceHost1: host1Voice,
+          voiceHost2: host2Voice,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Audio generation failed')
+      }
+
+      setPodcastJob(data.job)
+      toast.success('Podcast audio generated successfully!')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Audio generation failed'
+      toast.error(message)
+      // Reset job status on error
+      setPodcastJob(prev => prev ? { ...prev, status: 'complete' } : null)
     }
   }
 
@@ -830,6 +999,143 @@ export default function GeneratorPage() {
                     </div>
                   </div>
 
+                  {/* Voice Selection */}
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Voice Selection
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowVoiceLibrary(true)}
+                          className="text-xs px-2 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                        >
+                          <Library className="w-3 h-3 inline mr-1" />
+                          Library
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowVoiceDesigner(true)}
+                          className="text-xs px-2 py-1 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded"
+                        >
+                          <Wand2 className="w-3 h-3 inline mr-1" />
+                          Design
+                        </button>
+                      </div>
+                    </div>
+
+                    {loadingVoices ? (
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Loading voices...</div>
+                    ) : savedVoices.length === 0 ? (
+                      <div className="text-sm text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        No voices saved. Browse the library or design a custom voice to enable audio generation.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Host 1 Voice */}
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            {host1Name}'s Voice
+                          </label>
+                          <div className="flex gap-2">
+                            <select
+                              value={host1Voice || ''}
+                              onChange={(e) => setHost1Voice(e.target.value || null)}
+                              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                            >
+                              <option value="">Select voice...</option>
+                              {savedVoices.map((v) => (
+                                <option key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.gender ? `(${v.gender})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {host1Voice && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const voice = savedVoices.find((v) => v.voice_id === host1Voice)
+                                  if (voice) playVoicePreview(voice)
+                                }}
+                                className="p-1.5 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                                title="Preview voice"
+                              >
+                                {playingVoiceId === host1Voice ? (
+                                  <Pause className="w-4 h-4" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Host 2 Voice */}
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            {host2Name}'s Voice
+                          </label>
+                          <div className="flex gap-2">
+                            <select
+                              value={host2Voice || ''}
+                              onChange={(e) => setHost2Voice(e.target.value || null)}
+                              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                            >
+                              <option value="">Select voice...</option>
+                              {savedVoices.map((v) => (
+                                <option key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.gender ? `(${v.gender})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {host2Voice && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const voice = savedVoices.find((v) => v.voice_id === host2Voice)
+                                  if (voice) playVoicePreview(voice)
+                                }}
+                                className="p-1.5 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                                title="Preview voice"
+                              >
+                                {playingVoiceId === host2Voice ? (
+                                  <Pause className="w-4 h-4" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Generate Audio Toggle */}
+                    {savedVoices.length > 0 && (
+                      <label className="flex items-center gap-3 mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={generateAudio}
+                          onChange={(e) => setGenerateAudio(e.target.checked)}
+                          disabled={!host1Voice || !host2Voice}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Generate Audio
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {!host1Voice || !host2Voice
+                              ? 'Select voices for both hosts to enable audio'
+                              : 'Create MP3 audio using ElevenLabs (uses API credits)'}
+                          </p>
+                        </div>
+                        <Volume2 className={`w-4 h-4 ${generateAudio ? 'text-purple-600' : 'text-gray-400'}`} />
+                      </label>
+                    )}
+                  </div>
+
                   {/* Generate Button */}
                   <button
                     onClick={handleGeneratePodcast}
@@ -878,6 +1184,78 @@ export default function GeneratorPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Audio Player / Generation Status */}
+                      {podcastJob.audioUrl ? (
+                        <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-xl border border-purple-200 dark:border-purple-800">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                              <Volume2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-medium text-gray-900 dark:text-white">
+                                Podcast Audio Ready
+                              </h4>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Duration: {formatDuration(podcastJob.duration || 0)}
+                              </p>
+                            </div>
+                            <a
+                              href={podcastJob.audioUrl}
+                              download={`podcast_${podcastJob.id}.mp3`}
+                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download MP3
+                            </a>
+                          </div>
+                          <audio
+                            controls
+                            className="w-full"
+                            src={podcastJob.audioUrl}
+                          >
+                            Your browser does not support the audio element.
+                          </audio>
+                        </div>
+                      ) : podcastJob.status === 'generating_audio' || podcastJob.status === 'stitching' ? (
+                        <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center gap-3 mb-3">
+                            <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
+                            <div className="flex-1">
+                              <h4 className="font-medium text-gray-900 dark:text-white">
+                                {podcastJob.status === 'stitching' ? 'Finalizing Audio...' : 'Generating Audio...'}
+                              </h4>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                {podcastJob.status === 'stitching'
+                                  ? 'Almost done! Combining all segments...'
+                                  : 'Creating voice audio with ElevenLabs...'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                              style={{ width: `${podcastJob.progress || 0}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 text-right">
+                            {podcastJob.progress || 0}%
+                          </p>
+                        </div>
+                      ) : savedVoices.length > 0 && host1Voice && host2Voice ? (
+                        <div className="mb-4">
+                          <button
+                            onClick={() => handleGenerateAudio()}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium rounded-lg transition-colors"
+                          >
+                            <Volume2 className="w-4 h-4" />
+                            Generate Audio with Selected Voices
+                          </button>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
+                            Uses ElevenLabs API credits
+                          </p>
+                        </div>
+                      ) : null}
 
                       {/* Script Preview */}
                       <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -988,6 +1366,24 @@ export default function GeneratorPage() {
           )}
         </div>
       </div>
+
+      {/* Voice Library Modal */}
+      <VoiceLibraryModal
+        isOpen={showVoiceLibrary}
+        onClose={() => setShowVoiceLibrary(false)}
+        onSaveVoice={handleSaveVoiceFromLibrary}
+        savedVoiceIds={savedVoices.map((v) => v.voice_id)}
+      />
+
+      {/* Voice Designer Modal */}
+      <VoiceDesignerModal
+        isOpen={showVoiceDesigner}
+        onClose={() => setShowVoiceDesigner(false)}
+        onVoiceSaved={() => {
+          fetchSavedVoices()
+          setShowVoiceDesigner(false)
+        }}
+      />
     </div>
   )
 }

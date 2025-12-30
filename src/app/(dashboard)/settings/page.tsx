@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Edit2, Save, X, ExternalLink, Link as LinkIcon } from 'lucide-react'
+import { Loader2, Trash2, Edit2, Save, X, ExternalLink, Link as LinkIcon, Play, Pause, Mic, Library, Wand2, Star, StarOff } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SkeletonToneProfile } from '@/components/ui/Skeleton'
+import { VoiceLibraryModal, VoiceDesignerModal } from '@/components/voices'
 
 interface ToneProfile {
   id: string
@@ -15,8 +16,24 @@ interface ToneProfile {
   createdAt: string
 }
 
+interface SavedVoice {
+  id: string
+  voice_id: string
+  name: string
+  description: string | null
+  gender: string | null
+  accent: string | null
+  age: string | null
+  preview_url: string | null
+  source: 'library' | 'designed' | 'cloned'
+  design_prompt: string | null
+  is_default_host1: boolean
+  is_default_host2: boolean
+  created_at: string
+}
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'tones' | 'preferences'>('tones')
+  const [activeTab, setActiveTab] = useState<'tones' | 'voices' | 'preferences'>('tones')
 
   // Tone Lab State
   const [sampleText, setSampleText] = useState('')
@@ -38,9 +55,31 @@ export default function SettingsPage() {
   const [defaultAiFallback, setDefaultAiFallback] = useState(true)
   const [darkMode, setDarkMode] = useState(false)
 
-  // Fetch profiles on mount
+  // Voices State
+  const [voices, setVoices] = useState<SavedVoice[]>([])
+  const [loadingVoices, setLoadingVoices] = useState(true)
+  const [deletingVoiceId, setDeletingVoiceId] = useState<string | null>(null)
+  const [voiceDeleteTarget, setVoiceDeleteTarget] = useState<SavedVoice | null>(null)
+  const [settingDefaultVoice, setSettingDefaultVoice] = useState<string | null>(null)
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null)
+  const [showVoiceLibrary, setShowVoiceLibrary] = useState(false)
+  const [showVoiceDesigner, setShowVoiceDesigner] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // Fetch profiles and voices on mount
   useEffect(() => {
     fetchProfiles()
+    fetchVoices()
+  }, [])
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
   }, [])
 
   const fetchProfiles = async () => {
@@ -52,6 +91,135 @@ export default function SettingsPage() {
       console.error('Failed to fetch profiles:', err)
     } finally {
       setLoadingProfiles(false)
+    }
+  }
+
+  const fetchVoices = async () => {
+    try {
+      const response = await fetch('/api/voices')
+      const data = await response.json()
+      setVoices(data.voices || [])
+    } catch (err) {
+      console.error('Failed to fetch voices:', err)
+    } finally {
+      setLoadingVoices(false)
+    }
+  }
+
+  const playVoicePreview = (voice: SavedVoice) => {
+    if (!voice.preview_url) return
+
+    if (playingVoiceId === voice.id) {
+      stopAudio()
+      return
+    }
+
+    stopAudio()
+
+    const audio = new Audio(voice.preview_url)
+    audio.onended = () => setPlayingVoiceId(null)
+    audio.onerror = () => setPlayingVoiceId(null)
+    audio.play()
+    audioRef.current = audio
+    setPlayingVoiceId(voice.id)
+  }
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    setPlayingVoiceId(null)
+  }
+
+  const handleSetDefaultVoice = async (voiceId: string, host: 'host1' | 'host2') => {
+    setSettingDefaultVoice(`${voiceId}-${host}`)
+
+    try {
+      const response = await fetch(`/api/voices/${voiceId}/default`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to set default voice')
+      }
+
+      // Refresh voices to get updated defaults
+      await fetchVoices()
+      toast.success(`Voice set as default for ${host === 'host1' ? 'Host 1' : 'Host 2'}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set default voice')
+    } finally {
+      setSettingDefaultVoice(null)
+    }
+  }
+
+  const handleDeleteVoiceConfirm = async () => {
+    if (!voiceDeleteTarget) return
+
+    setDeletingVoiceId(voiceDeleteTarget.id)
+
+    try {
+      const response = await fetch(`/api/voices/${voiceDeleteTarget.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete voice')
+      }
+
+      setVoices((prev) => prev.filter((v) => v.id !== voiceDeleteTarget.id))
+      toast.success('Voice deleted')
+      setVoiceDeleteTarget(null)
+    } catch (err) {
+      toast.error('Failed to delete voice')
+    } finally {
+      setDeletingVoiceId(null)
+    }
+  }
+
+  const handleSaveVoiceFromLibrary = async (voice: {
+    voice_id: string
+    name: string
+    preview_url: string | null
+    gender: string | null
+    accent: string | null
+    age: string | null
+    description: string | null
+  }) => {
+    try {
+      const response = await fetch('/api/voices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice_id: voice.voice_id,
+          name: voice.name,
+          description: voice.description,
+          gender: voice.gender,
+          accent: voice.accent,
+          age: voice.age,
+          preview_url: voice.preview_url,
+          source: 'library',
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save voice')
+      }
+
+      setVoices((prev) => [data.voice, ...prev])
+      toast.success(`"${voice.name}" saved to your voices`)
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already saved')) {
+        toast.info('Voice already saved to your profile')
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to save voice')
+      }
     }
   }
 
@@ -231,6 +399,16 @@ export default function SettingsPage() {
           }`}
         >
           Tone Lab
+        </button>
+        <button
+          onClick={() => setActiveTab('voices')}
+          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+            activeTab === 'voices'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+          }`}
+        >
+          Voices
         </button>
         <button
           onClick={() => setActiveTab('preferences')}
@@ -489,6 +667,217 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === 'voices' && (
+        <div className="space-y-6">
+          {/* Action Buttons */}
+          <div className="flex gap-4">
+            <button
+              onClick={() => setShowVoiceLibrary(true)}
+              className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <Library className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-gray-900 dark:text-white">Voice Library</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Browse pre-made voices</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setShowVoiceDesigner(true)}
+              className="flex-1 flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <Wand2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-gray-900 dark:text-white">Design Voice</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Create a custom voice</p>
+              </div>
+            </button>
+          </div>
+
+          {/* Saved Voices */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              My Voices
+            </h2>
+
+            {loadingVoices ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="animate-pulse p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-200 dark:bg-gray-600 rounded-full" />
+                      <div className="flex-1">
+                        <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/3 mb-2" />
+                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : voices.length === 0 ? (
+              <div className="text-center py-12">
+                <Mic className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+                <p className="text-gray-500 dark:text-gray-400 mb-4">
+                  No voices saved yet. Browse the voice library or design your own!
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => setShowVoiceLibrary(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Browse Library
+                  </button>
+                  <button
+                    onClick={() => setShowVoiceDesigner(true)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Design Voice
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {voices.map((voice) => (
+                  <div
+                    key={voice.id}
+                    className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Play button */}
+                      <button
+                        onClick={() => playVoicePreview(voice)}
+                        disabled={!voice.preview_url}
+                        className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                          voice.preview_url
+                            ? playingVoiceId === voice.id
+                              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                              : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {playingVoiceId === voice.id ? (
+                          <Pause className="w-5 h-5" />
+                        ) : (
+                          <Play className="w-5 h-5" />
+                        )}
+                      </button>
+
+                      {/* Voice info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                            {voice.name}
+                          </h3>
+                          {voice.source === 'designed' && (
+                            <span className="text-xs px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded">
+                              Custom
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {voice.gender && (
+                            <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                              {voice.gender}
+                            </span>
+                          )}
+                          {voice.accent && (
+                            <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-gray-600 dark:text-gray-300">
+                              {voice.accent}
+                            </span>
+                          )}
+                          {voice.is_default_host1 && (
+                            <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded flex items-center gap-1">
+                              <Star className="w-3 h-3" /> Host 1
+                            </span>
+                          )}
+                          {voice.is_default_host2 && (
+                            <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded flex items-center gap-1">
+                              <Star className="w-3 h-3" /> Host 2
+                            </span>
+                          )}
+                        </div>
+                        {voice.description && (
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                            {voice.description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        {/* Set as Host 1 */}
+                        <button
+                          onClick={() => handleSetDefaultVoice(voice.id, 'host1')}
+                          disabled={voice.is_default_host1 || settingDefaultVoice === `${voice.id}-host1`}
+                          className={`p-2 rounded-lg transition-colors ${
+                            voice.is_default_host1
+                              ? 'text-green-600 dark:text-green-400 cursor-default'
+                              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                          }`}
+                          title={voice.is_default_host1 ? 'Default for Host 1' : 'Set as Host 1 default'}
+                        >
+                          {settingDefaultVoice === `${voice.id}-host1` ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : voice.is_default_host1 ? (
+                            <Star className="w-4 h-4 fill-current" />
+                          ) : (
+                            <span className="text-xs font-medium">H1</span>
+                          )}
+                        </button>
+
+                        {/* Set as Host 2 */}
+                        <button
+                          onClick={() => handleSetDefaultVoice(voice.id, 'host2')}
+                          disabled={voice.is_default_host2 || settingDefaultVoice === `${voice.id}-host2`}
+                          className={`p-2 rounded-lg transition-colors ${
+                            voice.is_default_host2
+                              ? 'text-green-600 dark:text-green-400 cursor-default'
+                              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                          }`}
+                          title={voice.is_default_host2 ? 'Default for Host 2' : 'Set as Host 2 default'}
+                        >
+                          {settingDefaultVoice === `${voice.id}-host2` ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : voice.is_default_host2 ? (
+                            <Star className="w-4 h-4 fill-current" />
+                          ) : (
+                            <span className="text-xs font-medium">H2</span>
+                          )}
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          onClick={() => setVoiceDeleteTarget(voice)}
+                          disabled={deletingVoiceId === voice.id}
+                          className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                          title="Delete voice"
+                        >
+                          {deletingVoiceId === voice.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              <strong>Tip:</strong> Set default voices for Host 1 and Host 2 to automatically use them when generating podcast audio.
+            </p>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'preferences' && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
@@ -549,6 +938,36 @@ export default function SettingsPage() {
         confirmText="Delete"
         variant="danger"
         isLoading={!!deletingProfile}
+      />
+
+      {/* Voice Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!voiceDeleteTarget}
+        onClose={() => setVoiceDeleteTarget(null)}
+        onConfirm={handleDeleteVoiceConfirm}
+        title="Delete Voice"
+        message={`Are you sure you want to delete "${voiceDeleteTarget?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        isLoading={!!deletingVoiceId}
+      />
+
+      {/* Voice Library Modal */}
+      <VoiceLibraryModal
+        isOpen={showVoiceLibrary}
+        onClose={() => setShowVoiceLibrary(false)}
+        onSaveVoice={handleSaveVoiceFromLibrary}
+        savedVoiceIds={voices.map((v) => v.voice_id)}
+      />
+
+      {/* Voice Designer Modal */}
+      <VoiceDesignerModal
+        isOpen={showVoiceDesigner}
+        onClose={() => setShowVoiceDesigner(false)}
+        onVoiceSaved={() => {
+          fetchVoices()
+          setShowVoiceDesigner(false)
+        }}
       />
     </div>
   )

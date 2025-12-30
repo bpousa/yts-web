@@ -17,6 +17,9 @@ type AnySupabase = SupabaseClient<any>
 
 const GOOGLE_TTS_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 const ELEVENLABS_TTS_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech'
+const ELEVENLABS_VOICES_ENDPOINT = 'https://api.elevenlabs.io/v1/voices'
+const ELEVENLABS_VOICE_DESIGN_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-voice/create-previews'
+const ELEVENLABS_PROJECTS_ENDPOINT = 'https://api.elevenlabs.io/v1/studio/projects'
 
 // Voice configurations
 export const VOICE_OPTIONS = {
@@ -70,6 +73,54 @@ export interface AudioSegment {
   text: string
   audioContent: Buffer
   duration: number
+}
+
+// ============================================
+// ELEVENLABS VOICE TYPES
+// ============================================
+
+export interface ElevenLabsVoice {
+  voice_id: string
+  name: string
+  preview_url: string | null
+  category: string
+  labels: {
+    accent?: string
+    description?: string
+    age?: string
+    gender?: string
+    use_case?: string
+  }
+  description?: string
+}
+
+export interface VoiceLibraryResponse {
+  voices: ElevenLabsVoice[]
+}
+
+export interface VoiceDesignPreview {
+  generated_voice_id: string
+  audio_base_64: string
+  media_type: string
+  duration_secs: number
+}
+
+export interface VoiceDesignResponse {
+  previews: VoiceDesignPreview[]
+  text: string
+}
+
+export interface SavedVoice {
+  id: string
+  voice_id: string
+  name: string
+  description?: string
+  gender?: string
+  accent?: string
+  age?: string
+  preview_url?: string
+  source: 'library' | 'designed' | 'cloned'
+  design_prompt?: string
 }
 
 // ============================================
@@ -360,4 +411,434 @@ export function estimateTTSCost(
  */
 export function getAvailableVoices(provider: TTSProvider) {
   return VOICE_OPTIONS[provider]
+}
+
+// ============================================
+// ELEVENLABS VOICE LIBRARY
+// ============================================
+
+/**
+ * Fetch all available voices from ElevenLabs library
+ */
+export async function fetchElevenLabsVoices(): Promise<ElevenLabsVoice[]> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  const response = await fetch(ELEVENLABS_VOICES_ENDPOINT, {
+    method: 'GET',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Failed to fetch voices: ${error}`)
+  }
+
+  const data: VoiceLibraryResponse = await response.json()
+  return data.voices
+}
+
+/**
+ * Get a specific voice by ID from ElevenLabs
+ */
+export async function getElevenLabsVoice(voiceId: string): Promise<ElevenLabsVoice | null> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  const response = await fetch(`${ELEVENLABS_VOICES_ENDPOINT}/${voiceId}`, {
+    method: 'GET',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+  })
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null
+    }
+    const error = await response.text()
+    throw new Error(`Failed to fetch voice: ${error}`)
+  }
+
+  return response.json()
+}
+
+// ============================================
+// ELEVENLABS VOICE DESIGN
+// ============================================
+
+/**
+ * Design a new voice from a text description
+ * Returns 3 preview options to choose from
+ */
+export async function designVoice(
+  description: string,
+  previewText?: string
+): Promise<VoiceDesignResponse> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  // Default preview text for podcast context
+  const text = previewText ||
+    "Hello and welcome to our podcast. Today we're diving into something really fascinating that I think you're going to love."
+
+  const response = await fetch(ELEVENLABS_VOICE_DESIGN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'xi-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      voice_description: description,
+      text,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Voice design failed: ${error}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Create a permanent voice from a design preview
+ */
+export async function saveDesignedVoice(
+  generatedVoiceId: string,
+  name: string,
+  description?: string
+): Promise<ElevenLabsVoice> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  // Create the voice from the preview
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-voice/create-voice-from-preview`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'xi-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      voice_name: name,
+      voice_description: description || `AI-designed voice: ${name}`,
+      generated_voice_id: generatedVoiceId,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Failed to save voice: ${error}`)
+  }
+
+  const data = await response.json()
+
+  // Return the voice info
+  return {
+    voice_id: data.voice_id,
+    name,
+    preview_url: null,
+    category: 'generated',
+    labels: {},
+    description: description || `AI-designed voice`,
+  }
+}
+
+/**
+ * Generate a short audio preview for a voice
+ */
+export async function generateVoicePreview(
+  voiceId: string,
+  text?: string
+): Promise<{ audioBase64: string; duration: number }> {
+  const previewText = text ||
+    "Hello! This is a preview of how I sound. I hope you like my voice."
+
+  const result = await synthesizeWithElevenLabs(previewText, voiceId)
+
+  return {
+    audioBase64: result.audioContent.toString('base64'),
+    duration: result.duration,
+  }
+}
+
+/**
+ * Delete a voice from ElevenLabs (only works for user-created voices)
+ */
+export async function deleteElevenLabsVoice(voiceId: string): Promise<void> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  const response = await fetch(`${ELEVENLABS_VOICES_ENDPOINT}/${voiceId}`, {
+    method: 'DELETE',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Failed to delete voice: ${error}`)
+  }
+}
+
+// ============================================
+// ELEVENLABS STUDIO PROJECTS API
+// ============================================
+
+export interface PodcastSegment {
+  speaker: string
+  text: string
+  emotion?: string
+}
+
+export interface CreatePodcastProjectOptions {
+  name: string
+  segments: PodcastSegment[]
+  voiceMap: Record<string, string> // speaker name -> voice_id
+  qualityPreset?: 'standard' | 'high' | 'ultra' | 'ultra_lossless'
+  callbackUrl?: string
+}
+
+export interface ProjectStatus {
+  projectId: string
+  state: 'creating' | 'default' | 'converting' | 'in_queue'
+  canBeDownloaded: boolean
+  progress?: number
+}
+
+/**
+ * Create a podcast project using ElevenLabs Studio API
+ * This handles multi-speaker audio generation natively
+ */
+export async function createPodcastProject(
+  options: CreatePodcastProjectOptions
+): Promise<{ projectId: string }> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  // Build the from_content_json structure
+  const contentNodes = options.segments.map(segment => ({
+    voice_id: options.voiceMap[segment.speaker],
+    text: cleanTextForTTS(segment.text),
+    type: 'tts_node',
+  }))
+
+  const fromContent = [{
+    name: options.name,
+    blocks: [{
+      sub_type: 'p',
+      nodes: contentNodes,
+    }],
+  }]
+
+  // Create form data
+  const formData = new FormData()
+  formData.append('name', options.name)
+  formData.append('from_content_json', JSON.stringify(fromContent))
+  formData.append('auto_convert', 'true')
+  formData.append('quality_preset', options.qualityPreset || 'high')
+  formData.append('default_model_id', 'eleven_multilingual_v2')
+
+  // Get default voice for title (use first speaker's voice)
+  const firstSpeaker = options.segments[0]?.speaker
+  const defaultVoiceId = firstSpeaker ? options.voiceMap[firstSpeaker] : undefined
+  if (defaultVoiceId) {
+    formData.append('default_paragraph_voice_id', defaultVoiceId)
+  }
+
+  if (options.callbackUrl) {
+    formData.append('callback_url', options.callbackUrl)
+  }
+
+  const response = await fetch(ELEVENLABS_PROJECTS_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Failed to create podcast project: ${error}`)
+  }
+
+  const data = await response.json()
+  return { projectId: data.project.project_id }
+}
+
+/**
+ * Get the status of a podcast project
+ */
+export async function getPodcastProjectStatus(
+  projectId: string
+): Promise<ProjectStatus> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  const response = await fetch(`${ELEVENLABS_PROJECTS_ENDPOINT}/${projectId}`, {
+    method: 'GET',
+    headers: {
+      'xi-api-key': apiKey,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Failed to get project status: ${error}`)
+  }
+
+  const data = await response.json()
+
+  return {
+    projectId: data.project_id,
+    state: data.state,
+    canBeDownloaded: data.can_be_downloaded,
+    progress: data.creation_meta?.creation_progress,
+  }
+}
+
+/**
+ * Download the audio for a completed project
+ */
+export async function downloadPodcastAudio(
+  projectId: string
+): Promise<Buffer> {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+
+  if (!apiKey) {
+    throw new Error('ElevenLabs API key not configured')
+  }
+
+  // Get the project snapshots to find the audio URL
+  const snapshotsResponse = await fetch(
+    `${ELEVENLABS_PROJECTS_ENDPOINT}/${projectId}/snapshots`,
+    {
+      method: 'GET',
+      headers: {
+        'xi-api-key': apiKey,
+      },
+    }
+  )
+
+  if (!snapshotsResponse.ok) {
+    const error = await snapshotsResponse.text()
+    throw new Error(`Failed to get project snapshots: ${error}`)
+  }
+
+  const snapshotsData = await snapshotsResponse.json()
+  const latestSnapshot = snapshotsData.snapshots?.[0]
+
+  if (!latestSnapshot) {
+    throw new Error('No snapshots available for download')
+  }
+
+  // Stream the audio from the snapshot
+  const audioResponse = await fetch(
+    `${ELEVENLABS_PROJECTS_ENDPOINT}/${projectId}/snapshots/${latestSnapshot.project_snapshot_id}/stream`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        convert_to_mpeg: true,
+      }),
+    }
+  )
+
+  if (!audioResponse.ok) {
+    const error = await audioResponse.text()
+    throw new Error(`Failed to download audio: ${error}`)
+  }
+
+  const audioBuffer = await audioResponse.arrayBuffer()
+  return Buffer.from(audioBuffer)
+}
+
+/**
+ * Generate complete podcast audio using ElevenLabs Studio
+ * This is the main function for podcast audio generation
+ */
+export async function generatePodcastWithStudio(
+  options: CreatePodcastProjectOptions & {
+    onProgress?: (status: string, progress: number) => Promise<void>
+    maxWaitMs?: number
+  }
+): Promise<{ audioBuffer: Buffer; duration: number }> {
+  const { onProgress, maxWaitMs = 600000 } = options // 10 minute default timeout
+
+  // Step 1: Create the project
+  if (onProgress) await onProgress('creating_project', 0)
+  const { projectId } = await createPodcastProject(options)
+
+  // Step 2: Poll for completion
+  const startTime = Date.now()
+  let lastProgress = 0
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const status = await getPodcastProjectStatus(projectId)
+
+    if (status.canBeDownloaded) {
+      if (onProgress) await onProgress('downloading', 90)
+      break
+    }
+
+    if (status.state === 'converting' || status.state === 'in_queue') {
+      const progress = Math.round((status.progress || 0) * 80) + 10 // 10-90%
+      if (progress > lastProgress) {
+        lastProgress = progress
+        if (onProgress) await onProgress('converting', progress)
+      }
+    }
+
+    // Wait before polling again
+    await new Promise(resolve => setTimeout(resolve, 2000))
+  }
+
+  // Check final status
+  const finalStatus = await getPodcastProjectStatus(projectId)
+  if (!finalStatus.canBeDownloaded) {
+    throw new Error('Podcast generation timed out or failed')
+  }
+
+  // Step 3: Download the audio
+  if (onProgress) await onProgress('downloading', 95)
+  const audioBuffer = await downloadPodcastAudio(projectId)
+
+  // Estimate duration based on buffer size (rough estimate: 128kbps MP3)
+  const estimatedDuration = Math.round((audioBuffer.length * 8) / (128 * 1000))
+
+  if (onProgress) await onProgress('complete', 100)
+
+  return {
+    audioBuffer,
+    duration: estimatedDuration,
+  }
 }
