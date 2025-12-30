@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw } from 'lucide-react'
+import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw, Mic, Download, Play } from 'lucide-react'
 import { SkeletonContentGenerator } from '@/components/ui/Skeleton'
 
 interface Transcript {
@@ -24,6 +24,41 @@ interface SEOData {
   readabilityScore: number
   readabilityLevel: string
 }
+
+interface PodcastSegment {
+  speaker: string
+  text: string
+  emotion?: string
+}
+
+interface PodcastScript {
+  title: string
+  description: string
+  segments: PodcastSegment[]
+  keyTakeaways: string[]
+}
+
+interface PodcastJob {
+  id: string
+  status: string
+  progress: number
+  script?: PodcastScript
+  audioUrl?: string
+  duration?: number
+  error?: string
+}
+
+const podcastDurations = [
+  { id: 'short', label: '3-5 min', description: 'Quick overview' },
+  { id: 'medium', label: '8-12 min', description: 'Standard episode' },
+  { id: 'long', label: '15-20 min', description: 'Deep dive' },
+]
+
+const podcastTones = [
+  { id: 'casual', label: 'Casual' },
+  { id: 'professional', label: 'Professional' },
+  { id: 'educational', label: 'Educational' },
+]
 
 const contentFormats = [
   { id: 'linkedin', label: 'LinkedIn Post' },
@@ -99,6 +134,16 @@ export default function GeneratorPage() {
   const [analyzingSeo, setAnalyzingSeo] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Podcast State
+  const [showPodcastOptions, setShowPodcastOptions] = useState(false)
+  const [podcastDuration, setPodcastDuration] = useState('medium')
+  const [podcastTone, setPodcastTone] = useState('casual')
+  const [host1Name, setHost1Name] = useState('Alex')
+  const [host2Name, setHost2Name] = useState('Jamie')
+  const [generatingPodcast, setGeneratingPodcast] = useState(false)
+  const [podcastJob, setPodcastJob] = useState<PodcastJob | null>(null)
+  const [expandedSegment, setExpandedSegment] = useState<number | null>(null)
 
   const contentRef = useRef<HTMLPreElement>(null)
 
@@ -260,6 +305,59 @@ export default function GeneratorPage() {
     setCopied(true)
     toast.success('Copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleGeneratePodcast = async () => {
+    if (!generatedContentId) {
+      toast.error('Generate content first before creating a podcast')
+      return
+    }
+
+    setGeneratingPodcast(true)
+    setPodcastJob(null)
+
+    try {
+      const response = await fetch('/api/generate/podcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentId: generatedContentId,
+          targetDuration: podcastDuration,
+          tone: podcastTone,
+          hostNames: { host1: host1Name, host2: host2Name },
+          includeIntro: true,
+          includeOutro: true,
+          ttsProvider: 'none', // Script only for now
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Podcast generation failed')
+      }
+
+      setPodcastJob(data.job)
+      toast.success('Podcast script generated successfully')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Podcast generation failed'
+      toast.error(message)
+    } finally {
+      setGeneratingPodcast(false)
+    }
+  }
+
+  const handleDownloadScript = (format: 'json' | 'txt' | 'srt') => {
+    if (!podcastJob?.id) return
+
+    const url = `/api/generate/podcast/${podcastJob.id}?export=${format}`
+    window.open(url, '_blank')
+  }
+
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   return (
@@ -631,6 +729,216 @@ export default function GeneratorPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Podcast Generation */}
+          {generatedContentId && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <button
+                onClick={() => setShowPodcastOptions(!showPodcastOptions)}
+                className="w-full flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <Mic className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div className="text-left">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      Generate Podcast
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Convert to a two-host conversation script
+                    </p>
+                  </div>
+                </div>
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showPodcastOptions ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showPodcastOptions && (
+                <div className="mt-6 space-y-4">
+                  {/* Duration Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Episode Length
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {podcastDurations.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setPodcastDuration(item.id)}
+                          className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                            podcastDuration === item.id
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          <span className="font-medium">{item.label}</span>
+                          <p className="text-xs opacity-80">{item.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tone Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Conversation Tone
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {podcastTones.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setPodcastTone(item.id)}
+                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                            podcastTone === item.id
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Host Names */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Host 1 (Skeptic)
+                      </label>
+                      <input
+                        type="text"
+                        value={host1Name}
+                        onChange={(e) => setHost1Name(e.target.value)}
+                        maxLength={20}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Host 2 (Expert)
+                      </label>
+                      <input
+                        type="text"
+                        value={host2Name}
+                        onChange={(e) => setHost2Name(e.target.value)}
+                        maxLength={20}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Generate Button */}
+                  <button
+                    onClick={handleGeneratePodcast}
+                    disabled={generatingPodcast}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {generatingPodcast ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating Script...
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-4 h-4" />
+                        Generate Podcast Script
+                      </>
+                    )}
+                  </button>
+
+                  {/* Podcast Script Output */}
+                  {podcastJob?.script && (
+                    <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-semibold text-gray-900 dark:text-white">
+                            {podcastJob.script.title}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {podcastJob.script.segments.length} segments &bull; ~{formatDuration(podcastJob.duration || 0)} estimated
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDownloadScript('txt')}
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg"
+                          >
+                            <Download className="w-4 h-4" />
+                            TXT
+                          </button>
+                          <button
+                            onClick={() => handleDownloadScript('srt')}
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg"
+                          >
+                            <Download className="w-4 h-4" />
+                            SRT
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Script Preview */}
+                      <div className="space-y-2 max-h-80 overflow-y-auto">
+                        {podcastJob.script.segments.slice(0, 10).map((segment, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setExpandedSegment(expandedSegment === idx ? null : idx)}
+                            className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                              segment.speaker === host1Name
+                                ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500'
+                                : 'bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-sm font-medium ${
+                                segment.speaker === host1Name
+                                  ? 'text-blue-700 dark:text-blue-400'
+                                  : 'text-green-700 dark:text-green-400'
+                              }`}>
+                                {segment.speaker}
+                              </span>
+                              {segment.emotion && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  ({segment.emotion})
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-sm text-gray-700 dark:text-gray-300 ${
+                              expandedSegment === idx ? '' : 'line-clamp-2'
+                            }`}>
+                              {segment.text}
+                            </p>
+                          </div>
+                        ))}
+                        {podcastJob.script.segments.length > 10 && (
+                          <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-2">
+                            +{podcastJob.script.segments.length - 10} more segments (download full script)
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Key Takeaways */}
+                      {podcastJob.script.keyTakeaways.length > 0 && (
+                        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Key Takeaways
+                          </h4>
+                          <ul className="space-y-1">
+                            {podcastJob.script.keyTakeaways.map((takeaway, idx) => (
+                              <li key={idx} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
+                                <span className="text-purple-500">•</span>
+                                {takeaway}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

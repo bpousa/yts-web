@@ -9,17 +9,17 @@
 
 ---
 
-## Project Status: Phase 4 Complete
+## Project Status: Phase 5 In Progress
 
 **Last Updated:** December 30, 2024
 
-The core application is now fully functional with all API routes implemented and frontend pages integrated.
+The core application is now fully functional with podcast script generation added.
 
 ### Summary
-- **Total Files Created:** 50+
-- **API Routes:** 17 endpoints
+- **Total Files Created:** 55+
+- **API Routes:** 19 endpoints
 - **Dashboard Pages:** 5 (Transcripts, Search, Generator, Settings, Webhooks)
-- **Services:** 9 backend services
+- **Services:** 11 backend services
 - **Build Status:** Passing
 
 ---
@@ -75,6 +75,8 @@ The core application is now fully functional with all API routes implemented and
 | `/api/webhooks/[id]` | GET, PUT, DELETE | Done |
 | `/api/webhooks/[id]/test` | POST | Done |
 | `/api/webhooks/trigger` | POST | Done |
+| `/api/generate/podcast` | GET, POST | Done |
+| `/api/generate/podcast/[id]` | GET, DELETE | Done |
 
 #### Phase 4: Frontend Integration
 - [x] Transcripts page - fetch, batch, list, delete, download
@@ -98,8 +100,16 @@ The core application is now fully functional with all API routes implemented and
   - Retry logic with exponential backoff
   - User-Agent rotation to avoid detection
   - Optional proxy support via `TRANSCRIPT_PROXY_URL`
+- [x] Podcast script generation feature:
+  - Two-host conversational format (skeptic + expert)
+  - Configurable duration (short/medium/long)
+  - Multiple tone options (casual/professional/educational)
+  - Custom host names
+  - Export to TXT, SRT formats
+  - TTS service integration ready (Google Cloud TTS, ElevenLabs)
 
 ### Up Next
+- [ ] Podcast audio generation (requires TTS API keys)
 - [ ] Input sanitization review
 - [ ] Usage analytics/metrics
 - [ ] Transcript caching
@@ -139,6 +149,10 @@ UPSTASH_REDIS_REST_TOKEN=  # Upstash Redis token
 
 # Optional: Proxy Support
 TRANSCRIPT_PROXY_URL=      # Proxy URL for YouTube requests (format: https://proxy.example.com/?url=)
+
+# Optional: Text-to-Speech (for podcast audio generation)
+GOOGLE_CLOUD_API_KEY=      # Google Cloud TTS (can use same as GOOGLE_AI_API_KEY)
+ELEVENLABS_API_KEY=        # ElevenLabs TTS for premium voices
 ```
 
 ---
@@ -201,6 +215,10 @@ TRANSCRIPT_PROXY_URL=      # Proxy URL for YouTube requests (format: https://pro
 | `/api/generate/[id]` | GET | Get generated content |
 | `/api/generate/[id]` | DELETE | Delete generated content |
 | `/api/generate/image` | POST | Generate image for content |
+| `/api/generate/podcast` | GET | List podcast jobs |
+| `/api/generate/podcast` | POST | Generate podcast script from content |
+| `/api/generate/podcast/[id]` | GET | Get podcast job status/script (supports ?export=txt|srt) |
+| `/api/generate/podcast/[id]` | DELETE | Delete podcast job |
 | `/api/seo` | POST | Analyze content for SEO |
 
 ### Tone Profiles
