@@ -8,6 +8,11 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateProject } from '@/lib/supabase/helpers'
 import { batchFetchTranscriptSchema } from '@/lib/utils/validators'
 import { fetchTranscriptsBatch } from '@/lib/services/transcript.service'
+import {
+  checkRateLimit,
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from '@/lib/services/rate-limiter.service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +22,12 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check rate limit (stricter for batch operations)
+    const rateLimitResult = await checkRateLimit(user.id, 'transcriptsBatch')
+    if (!rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult)
     }
 
     // Parse and validate body
@@ -65,12 +76,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       transcripts: savedTranscripts,
       successful: results.successful.length,
       failed: results.failed,
       total: urls.length,
     }, { status: 201 })
+    applyRateLimitHeaders(response.headers, rateLimitResult)
+    return response
 
   } catch (error) {
     console.error('POST /api/transcripts/batch error:', error)

@@ -9,6 +9,11 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCreateProject } from '@/lib/supabase/helpers'
 import { fetchTranscriptSchema } from '@/lib/utils/validators'
 import { fetchTranscript } from '@/lib/services/transcript.service'
+import {
+  checkRateLimit,
+  applyRateLimitHeaders,
+  rateLimitExceededResponse,
+} from '@/lib/services/rate-limiter.service'
 
 // ============================================
 // GET - List Transcripts
@@ -22,6 +27,12 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check rate limit
+    const rateLimitResult = await checkRateLimit(user.id, 'transcripts')
+    if (!rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult)
     }
 
     // Get query params
@@ -50,7 +61,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       transcripts: data || [],
       pagination: {
         page,
@@ -59,6 +70,8 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil((count || 0) / limit),
       },
     })
+    applyRateLimitHeaders(response.headers, rateLimitResult)
+    return response
   } catch (error) {
     console.error('GET /api/transcripts error:', error)
     return NextResponse.json(
@@ -80,6 +93,12 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check rate limit
+    const rateLimitResult = await checkRateLimit(user.id, 'transcripts')
+    if (!rateLimitResult.success) {
+      return rateLimitExceededResponse(rateLimitResult)
     }
 
     // Parse and validate body
@@ -128,13 +147,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       transcript,
       source: result.source,
       message: result.source === 'whisper'
         ? 'Transcript fetched using audio transcription (no captions available)'
         : 'Transcript fetched successfully',
     }, { status: 201 })
+    applyRateLimitHeaders(response.headers, rateLimitResult)
+    return response
 
   } catch (error) {
     console.error('POST /api/transcripts error:', error)

@@ -2,11 +2,109 @@
  * Transcript Service
  * Fetches transcripts from YouTube videos with fallback to Whisper
  * Ported from: /mnt/c/Projects/yts/Home.py
+ *
+ * Features:
+ * - YouTube caption scraping with retry logic
+ * - Optional proxy support via TRANSCRIPT_PROXY_URL env var
+ * - Whisper fallback for videos without captions
  */
 
 import { extractVideoId } from '@/lib/utils/youtube-parser'
 import { formatTranscript, type TranscriptSegment } from '@/lib/utils/text-formatter'
 import { transcribeYouTubeVideo } from './groq.service'
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+// Optional proxy URL for YouTube requests
+const PROXY_URL = process.env.TRANSCRIPT_PROXY_URL
+
+// Retry configuration
+const MAX_RETRIES = 3
+const INITIAL_RETRY_DELAY = 1000 // 1 second
+const MAX_RETRY_DELAY = 10000 // 10 seconds
+
+// User agents for rotation (helps avoid detection)
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+]
+
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]
+}
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Fetch with retry logic and exponential backoff
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxRetries = MAX_RETRIES
+): Promise<Response> {
+  let lastError: Error | null = null
+  let delay = INITIAL_RETRY_DELAY
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Add random user agent if not provided
+      const headers = new Headers(options.headers)
+      if (!headers.has('User-Agent')) {
+        headers.set('User-Agent', getRandomUserAgent())
+      }
+
+      // Use proxy if configured
+      let fetchUrl = url
+      if (PROXY_URL) {
+        // Format: proxy expects the target URL as a query param
+        // This is a simple proxy format; adjust based on your proxy service
+        const proxyUrl = new URL(PROXY_URL)
+        proxyUrl.searchParams.set('url', url)
+        fetchUrl = proxyUrl.toString()
+      }
+
+      const response = await fetch(fetchUrl, {
+        ...options,
+        headers,
+      })
+
+      // Check for rate limiting responses
+      if (response.status === 429 || response.status === 503) {
+        // Get retry-after header if available
+        const retryAfter = response.headers.get('Retry-After')
+        const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay
+
+        if (attempt < maxRetries) {
+          await sleep(Math.min(waitTime, MAX_RETRY_DELAY))
+          delay = Math.min(delay * 2, MAX_RETRY_DELAY)
+          continue
+        }
+      }
+
+      return response
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+
+      if (attempt < maxRetries) {
+        await sleep(delay)
+        delay = Math.min(delay * 2, MAX_RETRY_DELAY)
+        continue
+      }
+    }
+  }
+
+  throw lastError || new Error('Request failed after retries')
+}
 
 // ============================================
 // TYPES
@@ -49,9 +147,8 @@ async function fetchYouTubeTranscript(
   // Fetch the video page to get caption track URLs
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`
 
-  const response = await fetch(videoUrl, {
+  const response = await fetchWithRetry(videoUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept-Language': lang ? `${lang},en;q=0.9` : 'en-US,en;q=0.9',
     },
   })
@@ -82,8 +179,8 @@ async function fetchYouTubeTranscript(
   // Request JSON format
   captionUrl += '&fmt=json3'
 
-  // Fetch the captions
-  const captionResponse = await fetch(captionUrl)
+  // Fetch the captions with retry
+  const captionResponse = await fetchWithRetry(captionUrl)
 
   if (!captionResponse.ok) {
     throw new Error(`Failed to fetch captions: ${captionResponse.status}`)
@@ -123,11 +220,11 @@ async function fetchYouTubeTranscript(
  */
 async function fetchVideoTitle(videoId: string): Promise<string> {
   try {
-    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    })
+    const response = await fetchWithRetry(
+      `https://www.youtube.com/watch?v=${videoId}`,
+      {},
+      1 // Only 1 retry for title - not critical
+    )
 
     if (!response.ok) return videoId
 

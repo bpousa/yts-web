@@ -93,11 +93,16 @@ The core application is now fully functional with all API routes implemented and
 - [x] Skeleton loading components for all async operations
 - [x] Confirmation dialogs for destructive actions (delete operations)
 - [x] User-friendly error messages with toast feedback
+- [x] Rate limiting on API routes (in-memory + optional Upstash Redis)
+- [x] YouTube transcript fetching improvements:
+  - Retry logic with exponential backoff
+  - User-Agent rotation to avoid detection
+  - Optional proxy support via `TRANSCRIPT_PROXY_URL`
 
 ### Up Next
-- [ ] Rate limiting on API routes
 - [ ] Input sanitization review
 - [ ] Usage analytics/metrics
+- [ ] Transcript caching
 
 ---
 
@@ -127,6 +132,13 @@ GROQ_API_KEY=              # Whisper for audio transcription
 
 # YouTube
 YOUTUBE_API_KEY=           # YouTube Data API v3
+
+# Optional: Rate Limiting (for production)
+UPSTASH_REDIS_REST_URL=    # Upstash Redis URL for distributed rate limiting
+UPSTASH_REDIS_REST_TOKEN=  # Upstash Redis token
+
+# Optional: Proxy Support
+TRANSCRIPT_PROXY_URL=      # Proxy URL for YouTube requests (format: https://proxy.example.com/?url=)
 ```
 
 ---
