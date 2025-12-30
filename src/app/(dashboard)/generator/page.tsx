@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw, Mic, Download, Play, Pause, Volume2, Library, Wand2 } from 'lucide-react'
+import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw, Mic, Download, Play, Pause, Volume2, Library, Wand2, ExternalLink } from 'lucide-react'
 import { SkeletonContentGenerator } from '@/components/ui/Skeleton'
 import { VoiceLibraryModal, VoiceDesignerModal } from '@/components/voices'
 
@@ -117,11 +118,18 @@ const imageMoods = [
 ]
 
 export default function GeneratorPage() {
+  const searchParams = useSearchParams()
+
   // Source Selection
   const [transcripts, setTranscripts] = useState<Transcript[]>([])
   const [loadingTranscripts, setLoadingTranscripts] = useState(true)
   const [selectedTranscripts, setSelectedTranscripts] = useState<string[]>([])
   const [showTranscriptSelector, setShowTranscriptSelector] = useState(false)
+
+  // Auto-fetch from extension
+  const [autoFetching, setAutoFetching] = useState(false)
+  const [autoFetchProgress, setAutoFetchProgress] = useState<{ current: number; total: number } | null>(null)
+  const [fromExtension, setFromExtension] = useState(false)
 
   // Tone Profiles
   const [toneProfiles, setToneProfiles] = useState<ToneProfile[]>([])
@@ -178,6 +186,73 @@ export default function GeneratorPage() {
     fetchToneProfiles()
     fetchSavedVoices()
   }, [])
+
+  // Handle URL parameters from Chrome extension
+  useEffect(() => {
+    const videos = searchParams.get('videos')
+    const urlFormat = searchParams.get('format')
+    const urlInstructions = searchParams.get('instructions')
+
+    if (videos) {
+      setFromExtension(true)
+      const videoIds = videos.split(',').slice(0, 3)
+
+      // Set format if provided
+      if (urlFormat && contentFormats.some(f => f.id === urlFormat)) {
+        setFormat(urlFormat)
+      }
+
+      // Set instructions if provided
+      if (urlInstructions) {
+        setCustomInstructions(decodeURIComponent(urlInstructions))
+      }
+
+      // Auto-fetch transcripts
+      handleAutoFetch(videoIds)
+    }
+  }, [searchParams])
+
+  const handleAutoFetch = async (videoIds: string[]) => {
+    setAutoFetching(true)
+    setAutoFetchProgress({ current: 0, total: videoIds.length })
+
+    try {
+      // Convert video IDs to URLs
+      const urls = videoIds.map(id => `https://www.youtube.com/watch?v=${id}`)
+
+      const response = await fetch('/api/transcripts/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch transcripts')
+      }
+
+      // Refresh transcripts list
+      await fetchTranscripts()
+
+      // Auto-select the fetched transcripts
+      if (data.transcripts && data.transcripts.length > 0) {
+        const newIds = data.transcripts.map((t: { id: string }) => t.id)
+        setSelectedTranscripts(newIds)
+        toast.success(`Fetched ${data.successful} transcript${data.successful > 1 ? 's' : ''} from extension`)
+      }
+
+      if (data.failed && data.failed.length > 0) {
+        toast.error(`Failed to fetch ${data.failed.length} video${data.failed.length > 1 ? 's' : ''}`)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch transcripts'
+      toast.error(message)
+    } finally {
+      setAutoFetching(false)
+      setAutoFetchProgress(null)
+    }
+  }
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -543,13 +618,40 @@ export default function GeneratorPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Configuration Panel */}
         <div className="space-y-6">
+          {/* Extension Banner */}
+          {fromExtension && (
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4 flex items-center gap-3">
+              <ExternalLink className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  Sent from YTS Chrome Extension
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {autoFetching ? 'Fetching transcripts...' : 'Transcripts loaded and ready to generate'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Source Selection */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Source Material
             </h2>
 
-            {loadingTranscripts ? (
+            {autoFetching ? (
+              <div className="p-8 border-2 border-dashed border-blue-300 dark:border-blue-600 rounded-lg text-center">
+                <Loader2 className="w-12 h-12 mx-auto text-blue-500 animate-spin" />
+                <p className="mt-4 text-gray-700 dark:text-gray-300 font-medium">
+                  Fetching transcripts from YouTube...
+                </p>
+                {autoFetchProgress && (
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Processing {autoFetchProgress.total} video{autoFetchProgress.total > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            ) : loadingTranscripts ? (
               <SkeletonContentGenerator />
             ) : transcripts.length === 0 ? (
               <div className="p-8 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
@@ -773,13 +875,18 @@ export default function GeneratorPage() {
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={loading || selectedTranscripts.length === 0}
+            disabled={loading || autoFetching || selectedTranscripts.length === 0}
             className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold rounded-xl shadow-lg transition-all"
           >
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Generating...
+              </>
+            ) : autoFetching ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Fetching Transcripts...
               </>
             ) : (
               <>

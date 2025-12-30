@@ -4,14 +4,19 @@
 
 YTS-Web is a Next.js 14 application that transforms YouTube videos into AI-generated content. It's the web version of a Python/Streamlit app, now with multi-user support via Supabase.
 
+## Production Domain
+
+**https://yts.appendment.com**
+
 ## Tech Stack
 
 - **Frontend:** Next.js 14 (App Router), React 19, TypeScript, Tailwind CSS
 - **Backend:** Next.js API Routes (Serverless)
 - **Database:** Supabase (PostgreSQL)
 - **Auth:** Supabase Auth (Email + Google OAuth)
-- **AI Services:** Claude (Anthropic), Groq Whisper, Gemini
-- **Deployment:** Vercel
+- **AI Services:** Claude (Anthropic), Groq Whisper, Gemini, ElevenLabs (TTS)
+- **Deployment:** Vercel (custom domain: yts.appendment.com)
+- **Chrome Extension:** `chrome-extension/` directory
 
 ## Development Commands
 
@@ -118,6 +123,18 @@ supabase db push      # Push migrations
 supabase db pull      # Pull remote schema
 supabase gen types typescript --local > src/types/database.ts
 ```
+
+## Supabase Auth Configuration
+
+Required settings in Supabase Dashboard → Authentication → URL Configuration:
+
+| Setting | Value |
+|---------|-------|
+| Site URL | `https://yts.appendment.com` |
+| Redirect URLs | `https://yts.appendment.com/callback`, `http://localhost:3000/callback` |
+
+For Google OAuth, add redirect URI in Google Cloud Console:
+`https://fakxlxggvkwswbspkics.supabase.co/auth/v1/callback`
 
 ## Testing
 

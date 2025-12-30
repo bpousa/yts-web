@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YTS - Send to App</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>YTS</h1>
+      <span class="subtitle">YouTube to Content</span>
+    </header>
+
+    <!-- Current Video Section -->
+    <section class="section current-video">
+      <h2>Current Video</h2>
+      <div id="currentVideoContainer">
+        <div class="video-item" id="currentVideo" style="display: none;">
+          <img class="thumbnail" id="currentThumbnail" src="" alt="Thumbnail">
+          <div class="video-info">
+            <span class="video-title" id="currentTitle"></span>
+          </div>
+          <button class="btn-icon btn-add" id="addCurrentBtn" title="Add to queue">+</button>
+        </div>
+        <p class="placeholder" id="noVideoMessage">Not on a video page</p>
+      </div>
+    </section>
+
+    <!-- Queue Section -->
+    <section class="section queue">
+      <div class="section-header">
+        <h2>Queue <span id="queueCount">(0/3)</span></h2>
+        <button class="btn-text" id="clearAllBtn">Clear All</button>
+      </div>
+      <div id="queueList" class="queue-list">
+        <p class="placeholder" id="emptyQueueMessage">No videos in queue</p>
+      </div>
+    </section>
+
+    <!-- Format Section -->
+    <section class="section format">
+      <h2>Content Format</h2>
+      <select id="formatSelect">
+        <option value="linkedin">LinkedIn Post</option>
+        <option value="twitter">Twitter/X Thread</option>
+        <option value="blog-short">Blog (Short)</option>
+        <option value="blog-long">Blog (Long)</option>
+        <option value="newsletter">Newsletter</option>
+        <option value="youtube-script">YouTube Script</option>
+        <option value="podcast">Podcast Script</option>
+      </select>
+    </section>
+
+    <!-- Instructions Section -->
+    <section class="section instructions">
+      <h2>Instructions <span class="optional">(optional)</span></h2>
+      <textarea
+        id="instructionsInput"
+        placeholder="E.g., Focus on actionable tips, use casual tone..."
+        maxlength="500"
+      ></textarea>
+      <div class="char-count"><span id="charCount">0</span>/500</div>
+    </section>
+
+    <!-- Send Button -->
+    <button class="btn-primary" id="sendBtn" disabled>
+      Send to YTS App →
+    </button>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -3,7 +3,8 @@
 ## Quick Links
 
 - **GitHub:** https://github.com/bpousa/yts-web
-- **Vercel:** https://yts-web.vercel.app
+- **Production:** https://yts.appendment.com
+- **Vercel Dashboard:** https://vercel.com/bpousa/yts-web
 - **Supabase:** https://supabase.com/dashboard/project/fakxlxggvkwswbspkics
 - **Plan File:** `/home/mike/.claude/plans/velvety-marinating-blum.md`
 
