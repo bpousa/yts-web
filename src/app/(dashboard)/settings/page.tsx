@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Loader2, Trash2, Edit2, Save, X, ExternalLink, Link as LinkIcon } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { SkeletonToneProfile } from '@/components/ui/Skeleton'
 
 interface ToneProfile {
   id: string
@@ -28,6 +31,7 @@ export default function SettingsPage() {
   const [editDna, setEditDna] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ToneProfile | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Preferences State
@@ -52,7 +56,10 @@ export default function SettingsPage() {
   }
 
   const handleAnalyzeTone = async () => {
-    if (!sampleText.trim() && !sampleUrl.trim()) return
+    if (!sampleText.trim() && !sampleUrl.trim()) {
+      toast.error('Please provide sample text or a URL to analyze')
+      return
+    }
 
     setAnalyzingTone(true)
     setError(null)
@@ -74,15 +81,25 @@ export default function SettingsPage() {
       }
 
       setAnalyzedDna(data.styleDna)
+      toast.success('Tone analysis complete')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed')
+      const message = err instanceof Error ? err.message : 'Analysis failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setAnalyzingTone(false)
     }
   }
 
   const handleSaveProfile = async () => {
-    if (!profileName.trim() || !analyzedDna.trim()) return
+    if (!profileName.trim()) {
+      toast.error('Please enter a profile name')
+      return
+    }
+    if (!analyzedDna.trim()) {
+      toast.error('No style DNA to save')
+      return
+    }
 
     setSavingProfile(true)
     setError(null)
@@ -110,8 +127,11 @@ export default function SettingsPage() {
       setAnalyzedDna('')
       setSampleText('')
       setSampleUrl('')
+      toast.success(`Profile "${data.profile.name}" created`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      const message = err instanceof Error ? err.message : 'Save failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setSavingProfile(false)
     }
@@ -130,7 +150,10 @@ export default function SettingsPage() {
   }
 
   const handleSaveEdit = async (id: string) => {
-    if (!editName.trim() || !editDna.trim()) return
+    if (!editName.trim() || !editDna.trim()) {
+      toast.error('Name and style DNA are required')
+      return
+    }
 
     setSavingProfile(true)
 
@@ -154,18 +177,21 @@ export default function SettingsPage() {
         prev.map((p) => (p.id === id ? data.profile : p))
       )
       setEditingProfile(null)
+      toast.success('Profile updated')
     } catch (err) {
-      console.error('Failed to update profile:', err)
+      toast.error('Failed to update profile')
     } finally {
       setSavingProfile(false)
     }
   }
 
-  const handleDeleteProfile = async (id: string) => {
-    setDeletingProfile(id)
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+
+    setDeletingProfile(deleteTarget.id)
 
     try {
-      const response = await fetch(`/api/tones/${id}`, {
+      const response = await fetch(`/api/tones/${deleteTarget.id}`, {
         method: 'DELETE',
       })
 
@@ -173,9 +199,11 @@ export default function SettingsPage() {
         throw new Error('Failed to delete profile')
       }
 
-      setProfiles((prev) => prev.filter((p) => p.id !== id))
+      setProfiles((prev) => prev.filter((p) => p.id !== deleteTarget.id))
+      toast.success('Profile deleted')
+      setDeleteTarget(null)
     } catch (err) {
-      console.error('Failed to delete profile:', err)
+      toast.error('Failed to delete profile')
     } finally {
       setDeletingProfile(null)
     }
@@ -350,8 +378,10 @@ export default function SettingsPage() {
             </h2>
 
             {loadingProfiles ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <SkeletonToneProfile key={i} />
+                ))}
               </div>
             ) : profiles.length === 0 ? (
               <p className="text-gray-500 dark:text-gray-400 text-center py-8">
@@ -432,9 +462,10 @@ export default function SettingsPage() {
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteProfile(profile.id)}
+                              onClick={() => setDeleteTarget(profile)}
                               disabled={deletingProfile === profile.id}
                               className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                              title="Delete profile"
                             >
                               {deletingProfile === profile.id ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -507,6 +538,18 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Tone Profile"
+        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        isLoading={!!deletingProfile}
+      />
     </div>
   )
 }

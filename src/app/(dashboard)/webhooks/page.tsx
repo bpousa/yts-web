@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import {
   Webhook,
   Plus,
@@ -15,6 +16,8 @@ import {
   Clock,
   AlertCircle,
 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { SkeletonWebhook } from '@/components/ui/Skeleton'
 
 interface WebhookConfig {
   id: string
@@ -88,6 +91,8 @@ export default function WebhooksPage() {
   const [testing, setTesting] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<WebhookConfig | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     fetchWebhooks()
@@ -191,8 +196,12 @@ export default function WebhooksPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.name || !formData.endpointUrl) {
-      setError('Name and endpoint URL are required')
+    if (!formData.name) {
+      toast.error('Webhook name is required')
+      return
+    }
+    if (!formData.endpointUrl) {
+      toast.error('Endpoint URL is required')
       return
     }
 
@@ -252,16 +261,22 @@ export default function WebhooksPage() {
       setShowForm(false)
       setEditingId(null)
       resetForm()
+      toast.success(editingId ? 'Webhook updated' : 'Webhook created')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      const message = err instanceof Error ? err.message : 'Save failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+
+    setIsDeleting(true)
     try {
-      const response = await fetch(`/api/webhooks/${id}`, {
+      const response = await fetch(`/api/webhooks/${deleteTarget.id}`, {
         method: 'DELETE',
       })
 
@@ -269,13 +284,17 @@ export default function WebhooksPage() {
         throw new Error('Failed to delete webhook')
       }
 
-      setWebhooks((prev) => prev.filter((w) => w.id !== id))
-      if (selectedWebhook?.id === id) {
+      setWebhooks((prev) => prev.filter((w) => w.id !== deleteTarget.id))
+      if (selectedWebhook?.id === deleteTarget.id) {
         setSelectedWebhook(null)
         setLogs([])
       }
+      toast.success('Webhook deleted')
+      setDeleteTarget(null)
     } catch (err) {
-      console.error('Failed to delete webhook:', err)
+      toast.error('Failed to delete webhook')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -292,11 +311,14 @@ export default function WebhooksPage() {
 
       if (response.ok) {
         setTestResult({ success: true, message: `Success! Status: ${data.statusCode}` })
+        toast.success(`Webhook test successful (${data.statusCode})`)
       } else {
         setTestResult({ success: false, message: data.error || 'Test failed' })
+        toast.error(data.error || 'Webhook test failed')
       }
     } catch (err) {
       setTestResult({ success: false, message: 'Test request failed' })
+      toast.error('Webhook test request failed')
     } finally {
       setTesting(null)
     }
@@ -353,8 +375,10 @@ export default function WebhooksPage() {
             </div>
 
             {loadingWebhooks ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <SkeletonWebhook key={i} />
+                ))}
               </div>
             ) : webhooks.length === 0 ? (
               <div className="text-center py-8">
@@ -723,8 +747,9 @@ export default function WebhooksPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(selectedWebhook.id)}
+                      onClick={() => setDeleteTarget(selectedWebhook)}
                       className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                      title="Delete webhook"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -843,6 +868,18 @@ export default function WebhooksPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Webhook"
+        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        isLoading={isDeleting}
+      />
     </div>
   )
 }

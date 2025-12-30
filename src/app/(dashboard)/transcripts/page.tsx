@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { FileText, Download, Loader2, AlertCircle, CheckCircle, Trash2, ExternalLink, Clock } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { SkeletonTranscriptItem } from '@/components/ui/Skeleton'
 
 interface TranscriptResult {
   id: string
@@ -30,6 +33,8 @@ export default function TranscriptsPage() {
   const [savedTranscripts, setSavedTranscripts] = useState<TranscriptResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<TranscriptResult | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<TranscriptResult | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Fetch existing transcripts on mount
   useEffect(() => {
@@ -56,7 +61,7 @@ export default function TranscriptsPage() {
     const urlList = urls.split('\n').map(u => u.trim()).filter(u => u.length > 0)
 
     if (urlList.length === 0) {
-      setError('Please enter at least one URL')
+      toast.error('Please enter at least one URL')
       return
     }
 
@@ -93,6 +98,8 @@ export default function TranscriptsPage() {
           status: 'success',
           createdAt: new Date().toISOString(),
         }])
+
+        toast.success('Transcript fetched successfully')
       } else {
         // Batch fetch
         const response = await fetch('/api/transcripts/batch', {
@@ -134,21 +141,33 @@ export default function TranscriptsPage() {
         }))
 
         setResults([...successResults, ...failedResults])
+
+        if (successResults.length > 0) {
+          toast.success(`${successResults.length} transcript(s) fetched successfully`)
+        }
+        if (failedResults.length > 0) {
+          toast.error(`${failedResults.length} transcript(s) failed`)
+        }
       }
 
       // Refresh the saved transcripts list
       await fetchTranscripts()
       setUrls('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      const message = err instanceof Error ? err.message : 'An error occurred'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+
+    setIsDeleting(true)
     try {
-      const response = await fetch(`/api/transcripts/${id}`, {
+      const response = await fetch(`/api/transcripts/${deleteTarget.id}`, {
         method: 'DELETE',
       })
 
@@ -156,12 +175,16 @@ export default function TranscriptsPage() {
         throw new Error('Failed to delete transcript')
       }
 
-      setSavedTranscripts(prev => prev.filter(t => t.id !== id))
-      if (selectedTranscript?.id === id) {
+      setSavedTranscripts(prev => prev.filter(t => t.id !== deleteTarget.id))
+      if (selectedTranscript?.id === deleteTarget.id) {
         setSelectedTranscript(null)
       }
+      toast.success('Transcript deleted')
+      setDeleteTarget(null)
     } catch (err) {
-      console.error('Error deleting transcript:', err)
+      toast.error('Failed to delete transcript')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -175,13 +198,17 @@ export default function TranscriptsPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    toast.success('Transcript downloaded')
   }
 
   const downloadAllAsZip = async () => {
-    // For simplicity, download as concatenated text file
-    // In production, you might use JSZip library
-    const content = results
-      .filter(r => r.status === 'success')
+    const successResults = results.filter(r => r.status === 'success')
+    if (successResults.length === 0) {
+      toast.error('No transcripts to download')
+      return
+    }
+
+    const content = successResults
       .map(r => `=== ${r.title} ===\n\n${r.content}\n\n`)
       .join('\n---\n\n')
 
@@ -194,6 +221,7 @@ export default function TranscriptsPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    toast.success(`${successResults.length} transcript(s) downloaded`)
   }
 
   return (
@@ -363,8 +391,10 @@ export default function TranscriptsPage() {
             </h2>
 
             {fetchingList ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonTranscriptItem key={i} />
+                ))}
               </div>
             ) : savedTranscripts.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
@@ -415,9 +445,10 @@ export default function TranscriptsPage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleDelete(transcript.id)
+                            setDeleteTarget(transcript)
                           }}
                           className="p-1 text-gray-400 hover:text-red-600"
+                          title="Delete transcript"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -445,6 +476,18 @@ export default function TranscriptsPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Transcript"
+        message={`Are you sure you want to delete "${deleteTarget?.title}"? This action cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        isLoading={isDeleting}
+      />
     </div>
   )
 }

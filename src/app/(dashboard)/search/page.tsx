@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Filter, Plus, Loader2, ExternalLink, Clock, Eye, Calendar } from 'lucide-react'
+import { toast } from 'sonner'
+import { Search, Filter, Plus, Loader2, ExternalLink, Eye, Calendar } from 'lucide-react'
+import { SkeletonVideoResult } from '@/components/ui/Skeleton'
 
 interface VideoResult {
   id: string
@@ -65,7 +67,10 @@ export default function SearchPage() {
   }
 
   const addToQueue = async () => {
-    if (selectedVideos.length === 0) return
+    if (selectedVideos.length === 0) {
+      toast.error('No videos selected')
+      return
+    }
 
     setAddingToQueue(true)
 
@@ -90,10 +95,15 @@ export default function SearchPage() {
       const successCount = data.successful?.length || 0
       const failCount = data.failed?.length || 0
 
-      alert(`Added ${successCount} transcript(s) to your library. ${failCount > 0 ? `${failCount} failed.` : ''}`)
+      if (successCount > 0) {
+        toast.success(`Added ${successCount} transcript(s) to your library`)
+      }
+      if (failCount > 0) {
+        toast.error(`${failCount} video(s) failed to fetch`)
+      }
       setSelectedVideos([])
     } catch (err) {
-      alert('Failed to add videos to transcript queue')
+      toast.error('Failed to add videos to transcript queue')
     } finally {
       setAddingToQueue(false)
     }
@@ -268,8 +278,17 @@ export default function SearchPage() {
           </div>
         )}
 
+        {/* Loading State */}
+        {loading && (
+          <div className="space-y-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonVideoResult key={i} />
+            ))}
+          </div>
+        )}
+
         {/* Results */}
-        {results.length > 0 && (
+        {!loading && results.length > 0 && (
           <div className="space-y-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Found {results.length} videos

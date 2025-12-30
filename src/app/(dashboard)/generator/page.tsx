@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { Sparkles, Loader2, Image as ImageIcon, Copy, Check, FileText, ChevronDown, Send, RefreshCw } from 'lucide-react'
+import { SkeletonContentGenerator } from '@/components/ui/Skeleton'
 
 interface Transcript {
   id: string
@@ -142,7 +144,7 @@ export default function GeneratorPage() {
 
   const handleGenerate = async () => {
     if (selectedTranscripts.length === 0) {
-      setError('Please select at least one transcript')
+      toast.error('Please select at least one transcript')
       return
     }
 
@@ -174,13 +176,16 @@ export default function GeneratorPage() {
 
       setGeneratedContent(data.content)
       setGeneratedContentId(data.id)
+      toast.success('Content generated successfully')
 
       // Auto-generate image if enabled
       if (generateImage && data.id) {
         await handleGenerateImage(data.id)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed')
+      const message = err instanceof Error ? err.message : 'Generation failed'
+      setError(message)
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -212,8 +217,9 @@ export default function GeneratorPage() {
       }
 
       setGeneratedImage(data.imageUrl)
+      toast.success('Image generated successfully')
     } catch (err) {
-      console.error('Image generation failed:', err)
+      toast.error('Image generation failed')
     } finally {
       setGeneratingImage(false)
     }
@@ -241,8 +247,9 @@ export default function GeneratorPage() {
       }
 
       setSeoData(data)
+      toast.success('SEO analysis complete')
     } catch (err) {
-      console.error('SEO analysis failed:', err)
+      toast.error('SEO analysis failed')
     } finally {
       setAnalyzingSeo(false)
     }
@@ -251,6 +258,7 @@ export default function GeneratorPage() {
   const handleCopy = () => {
     navigator.clipboard.writeText(generatedContent)
     setCopied(true)
+    toast.success('Copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -275,9 +283,7 @@ export default function GeneratorPage() {
             </h2>
 
             {loadingTranscripts ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              </div>
+              <SkeletonContentGenerator />
             ) : transcripts.length === 0 ? (
               <div className="p-8 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
                 <FileText className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600" />
