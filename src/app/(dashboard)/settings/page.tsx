@@ -86,7 +86,7 @@ export default function SettingsPage() {
     try {
       const response = await fetch('/api/tones')
       const data = await response.json()
-      setProfiles(data.profiles || [])
+      setProfiles(data.toneProfiles || [])
     } catch (err) {
       console.error('Failed to fetch profiles:', err)
     } finally {
