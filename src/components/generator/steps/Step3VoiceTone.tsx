@@ -38,7 +38,7 @@ export function Step3VoiceTone({ data, updateData }: Step3Props) {
     try {
       const response = await fetch('/api/tones')
       const result = await response.json()
-      setToneProfiles(result.tones || [])
+      setToneProfiles(result.toneProfiles || [])
     } catch (error) {
       console.error('Failed to fetch tone profiles:', error)
     } finally {
