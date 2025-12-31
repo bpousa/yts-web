@@ -69,11 +69,15 @@ const availableFields = [
   { id: 'title', label: 'Title', description: 'Content title/headline', example: 'How to Boost Sales...' },
   { id: 'content', label: 'Content', description: 'Main content body (full text)', example: 'The complete generated text...' },
   { id: 'excerpt', label: 'Excerpt', description: 'Short preview/summary (first 200 chars)', example: 'A brief summary...' },
+  { id: 'category', label: 'Category', description: 'Content category for blog posts', example: 'Sales, Marketing' },
+  { id: 'tags', label: 'Tags', description: 'Comma-separated tags for the content', example: 'sales, tips, closing' },
+  { id: 'seoKeywords', label: 'SEO Keywords', description: 'Keywords for SEO optimization', example: 'sales training, cold calling' },
   { id: 'format', label: 'Format', description: 'Content format type', example: 'linkedin, twitter, blog-long' },
   { id: 'voice', label: 'Voice', description: 'Tone/voice style used', example: 'professional, casual' },
   { id: 'imageUrl', label: 'Image URL', description: 'Generated image URL (if available)', example: 'https://...' },
   { id: 'createdAt', label: 'Created At', description: 'ISO timestamp of creation', example: '2024-12-30T15:30:00Z' },
   { id: 'id', label: 'Content ID', description: 'Unique content identifier', example: 'uuid-string' },
+  { id: 'sourceTranscripts', label: 'Source Transcripts', description: 'Titles of source transcripts used', example: 'Video 1, Video 2' },
 ]
 
 interface FieldMapping {
