@@ -5,6 +5,7 @@
  */
 
 import Groq from 'groq-sdk'
+import { Innertube } from 'youtubei.js'
 
 // ============================================
 // CONFIGURATION
@@ -55,6 +56,30 @@ export interface TranscriptionSegment {
 }
 
 /**
+ * Get MIME type from filename
+ */
+function getMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'm4a':
+    case 'mp4':
+      return 'audio/mp4'
+    case 'webm':
+      return 'audio/webm'
+    case 'wav':
+      return 'audio/wav'
+    case 'ogg':
+      return 'audio/ogg'
+    case 'flac':
+      return 'audio/flac'
+    default:
+      return 'audio/mpeg'
+  }
+}
+
+/**
  * Transcribe audio file using Groq Whisper
  */
 export async function transcribeAudio(
@@ -69,9 +94,10 @@ export async function transcribeAudio(
     throw new Error(`Audio file too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB`)
   }
 
-  // Create a File object from the buffer
+  // Create a File object from the buffer with correct MIME type
   const uint8Array = new Uint8Array(audioBuffer)
-  const file = new File([uint8Array], filename, { type: 'audio/mpeg' })
+  const mimeType = getMimeType(filename)
+  const file = new File([uint8Array], filename, { type: mimeType })
 
   const transcription = await client.audio.transcriptions.create({
     file,
@@ -127,26 +153,26 @@ export async function transcribeFromUrl(
 }
 
 // ============================================
-// AUDIO DOWNLOAD (yt-dlp alternative for serverless)
+// AUDIO DOWNLOAD (using youtubei.js)
 // ============================================
 
 /**
- * Note: In the original Python app, yt-dlp is used to download audio.
- * For serverless environments, we need an alternative approach:
- *
- * Options:
- * 1. Use cobalt.tools API (requires API key for api.cobalt.tools)
- * 2. Use a self-hosted cobalt instance
- * 3. Use a microservice running yt-dlp
- *
- * Configure via environment variables:
- * - COBALT_API_URL: The cobalt instance URL (default: https://api.cobalt.tools)
- * - COBALT_API_KEY: Optional API key for authentication
+ * Downloads audio from YouTube using youtubei.js
+ * This is a pure JavaScript solution that works in serverless environments
+ * without requiring yt-dlp, FFmpeg, or external APIs like Cobalt.
  */
 
-// Cobalt API configuration
-const COBALT_API_URL = process.env.COBALT_API_URL || 'https://api.cobalt.tools'
-const COBALT_API_KEY = process.env.COBALT_API_KEY
+// Singleton Innertube instance
+let innertubeInstance: Innertube | null = null
+
+async function getInnertube(): Promise<Innertube> {
+  if (!innertubeInstance) {
+    innertubeInstance = await Innertube.create({
+      retrieve_player: true,
+    })
+  }
+  return innertubeInstance
+}
 
 export interface AudioDownloadResult {
   buffer: Buffer
@@ -156,83 +182,65 @@ export interface AudioDownloadResult {
 }
 
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
-  // Build headers
-  const headers: Record<string, string> = {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
+  const yt = await getInnertube()
+
+  // Get video info
+  const info = await yt.getBasicInfo(videoId)
+
+  if (!info.streaming_data) {
+    throw new Error('No streaming data available for this video')
   }
 
-  // Add API key if configured
-  if (COBALT_API_KEY) {
-    headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
+  // Find the best audio-only format
+  // Prefer lower bitrate formats to stay under Groq's 25MB limit
+  const audioFormats = info.streaming_data.adaptive_formats
+    ?.filter(f => f.has_audio && !f.has_video)
+    ?.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0)) // Sort by bitrate ascending
+
+  if (!audioFormats || audioFormats.length === 0) {
+    throw new Error('No audio formats available for this video')
   }
 
-  // Use new cobalt API format
-  const cobaltResponse = await fetch(COBALT_API_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      downloadMode: 'audio',
-      audioFormat: 'mp3',
-      audioBitrate: '64', // 64kbps for reasonable quality/size
-    }),
-  })
+  // Pick a low-bitrate format (first one after sorting)
+  // This helps keep file size under 25MB for Whisper
+  const format = audioFormats[0]
 
-  if (!cobaltResponse.ok) {
-    const errorText = await cobaltResponse.text()
-    // Check for auth error
-    if (cobaltResponse.status === 401 || cobaltResponse.status === 403) {
-      throw new Error(
-        'Audio download failed: Cobalt API requires authentication. ' +
-        'Please configure COBALT_API_KEY environment variable or use a self-hosted instance.'
-      )
-    }
-    throw new Error(`Audio download failed (${cobaltResponse.status}): ${errorText}`)
+  // Get the download URL
+  const url = await format.decipher(yt.session.player)
+
+  if (!url) {
+    throw new Error('Failed to decipher audio URL')
   }
 
-  const cobaltData = await cobaltResponse.json()
+  // Download the audio
+  const response = await fetch(url)
 
-  // Handle different response types
-  if (cobaltData.status === 'error') {
-    const errorCode = cobaltData.error?.code || 'unknown'
-    const errorMsg = cobaltData.error?.message || cobaltData.text || 'Audio download failed'
-    throw new Error(`Cobalt error (${errorCode}): ${errorMsg}`)
+  if (!response.ok) {
+    throw new Error(`Failed to download audio: ${response.status}`)
   }
 
-  // Get the download URL from response
-  // Response can be 'redirect' (direct URL) or 'picker' (multiple options)
-  let downloadUrl: string | undefined
-
-  if (cobaltData.status === 'redirect' && cobaltData.url) {
-    downloadUrl = cobaltData.url
-  } else if (cobaltData.status === 'picker' && cobaltData.picker?.length > 0) {
-    // Pick the first audio option
-    const audioItem = cobaltData.picker.find((item: { type?: string }) => item.type === 'audio')
-    downloadUrl = audioItem?.url || cobaltData.picker[0]?.url
-  } else if (cobaltData.url) {
-    // Fallback for direct URL
-    downloadUrl = cobaltData.url
-  }
-
-  if (!downloadUrl) {
-    throw new Error('No download URL returned from Cobalt')
-  }
-
-  // Download the audio file
-  const audioResponse = await fetch(downloadUrl)
-
-  if (!audioResponse.ok) {
-    throw new Error(`Failed to download audio file: ${audioResponse.status}`)
-  }
-
-  const arrayBuffer = await audioResponse.arrayBuffer()
+  const arrayBuffer = await response.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
+
+  // Check file size
+  if (buffer.length > MAX_FILE_SIZE) {
+    throw new Error(
+      `Audio file is ${(buffer.length / 1024 / 1024).toFixed(1)}MB, ` +
+      `which exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB limit for Whisper transcription. ` +
+      'Try a shorter video.'
+    )
+  }
+
+  // Determine format extension
+  const mimeType = format.mime_type || 'audio/webm'
+  const extension = mimeType.includes('mp4') ? 'm4a' :
+                    mimeType.includes('webm') ? 'webm' : 'audio'
 
   return {
     buffer,
-    filename: `${videoId}.mp3`,
-    format: 'mp3',
+    filename: `${videoId}.${extension}`,
+    duration: info.basic_info.duration,
+    format: extension,
   }
 }
 
