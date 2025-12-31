@@ -5,7 +5,7 @@
  */
 
 import Groq from 'groq-sdk'
-import { Innertube } from 'youtubei.js'
+import { Innertube, ClientType } from 'youtubei.js'
 
 // ============================================
 // CONFIGURATION
@@ -168,7 +168,15 @@ let innertubeInstance: Innertube | null = null
 async function getInnertube(): Promise<Innertube> {
   if (!innertubeInstance) {
     innertubeInstance = await Innertube.create({
+      // Use Android client which has fewer restrictions on server-side
+      client_type: ClientType.ANDROID,
+      // Generate session locally for better performance
+      generate_session_locally: true,
+      // Retrieve player for deciphering URLs
       retrieve_player: true,
+      // Set location to US for consistency
+      location: 'US',
+      lang: 'en',
     })
   }
   return innertubeInstance
@@ -184,11 +192,22 @@ export interface AudioDownloadResult {
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
   const yt = await getInnertube()
 
-  // Get video info
-  const info = await yt.getBasicInfo(videoId)
+  // Try to get video info - YouTube may restrict access on server-side
+  let info
+  try {
+    // Use getInfo which provides full video information including streaming data
+    info = await yt.getInfo(videoId)
+  } catch (err) {
+    throw new Error(
+      `Failed to get video info: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
 
-  if (!info.streaming_data) {
-    throw new Error('No streaming data available for this video')
+  if (!info?.streaming_data) {
+    throw new Error(
+      'No streaming data available for this video. ' +
+      'This may be due to age restrictions, region locks, or YouTube server-side restrictions.'
+    )
   }
 
   // Find the best audio-only format
