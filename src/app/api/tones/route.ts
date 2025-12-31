@@ -19,11 +19,13 @@ export async function GET() {
 
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    console.log('GET /api/tones - user:', user?.id, 'authError:', authError?.message)
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const toneProfiles = await getToneProfiles(user.id)
+    console.log('GET /api/tones - found', toneProfiles.length, 'profiles')
 
     return NextResponse.json({ toneProfiles })
   } catch (error) {
