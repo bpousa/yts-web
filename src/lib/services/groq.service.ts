@@ -234,22 +234,52 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
     throw new Error(`No download URL from Cobalt (status: ${data.status})`)
   }
 
-  // Step 2: Download the audio file
+  // Step 2: Download the audio file from tunnel/redirect URL
   let audioResponse: Response
   try {
-    audioResponse = await fetch(downloadUrl)
+    audioResponse = await fetch(downloadUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+      },
+      // Follow redirects
+      redirect: 'follow',
+    })
   } catch (err) {
-    throw new Error(`Audio download failed: ${err instanceof Error ? err.message : 'Network error'}`)
+    throw new Error(`Audio fetch error: ${err instanceof Error ? err.message : 'Network error'}`)
   }
 
   if (!audioResponse.ok) {
-    throw new Error(`Audio download HTTP error: ${audioResponse.status}`)
+    const errorText = await audioResponse.text().catch(() => '')
+    throw new Error(`Audio download failed (${audioResponse.status}): ${errorText.slice(0, 100)}`)
   }
 
-  const buffer = Buffer.from(await audioResponse.arrayBuffer())
+  // Read response body as chunks to handle streaming
+  const chunks: Uint8Array[] = []
+  const reader = audioResponse.body?.getReader()
+
+  if (!reader) {
+    throw new Error('No response body reader available')
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  // Combine chunks into buffer
+  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
+  const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
 
   if (buffer.length === 0) {
-    throw new Error('Downloaded audio is empty')
+    const contentLength = audioResponse.headers.get('content-length')
+    const contentType = audioResponse.headers.get('content-type')
+    throw new Error(`Empty audio (expected: ${contentLength}, type: ${contentType})`)
   }
 
   return {
