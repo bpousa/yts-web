@@ -12,9 +12,13 @@ import {
   XCircle,
   Loader2,
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   Clock,
   AlertCircle,
+  HelpCircle,
+  Code,
+  Settings2,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SkeletonWebhook } from '@/components/ui/Skeleton'
@@ -60,6 +64,24 @@ const authTypes = [
   { id: 'custom_header', label: 'Custom Header' },
 ]
 
+// Available fields for webhook payloads
+const availableFields = [
+  { id: 'title', label: 'Title', description: 'Content title/headline', example: 'How to Boost Sales...' },
+  { id: 'content', label: 'Content', description: 'Main content body (full text)', example: 'The complete generated text...' },
+  { id: 'excerpt', label: 'Excerpt', description: 'Short preview/summary (first 200 chars)', example: 'A brief summary...' },
+  { id: 'format', label: 'Format', description: 'Content format type', example: 'linkedin, twitter, blog-long' },
+  { id: 'voice', label: 'Voice', description: 'Tone/voice style used', example: 'professional, casual' },
+  { id: 'imageUrl', label: 'Image URL', description: 'Generated image URL (if available)', example: 'https://...' },
+  { id: 'createdAt', label: 'Created At', description: 'ISO timestamp of creation', example: '2024-12-30T15:30:00Z' },
+  { id: 'id', label: 'Content ID', description: 'Unique content identifier', example: 'uuid-string' },
+]
+
+interface FieldMapping {
+  sourceField: string
+  targetField: string
+  enabled: boolean
+}
+
 export default function WebhooksPage() {
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([])
   const [loadingWebhooks, setLoadingWebhooks] = useState(true)
@@ -70,6 +92,8 @@ export default function WebhooksPage() {
   // Form state
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+  const [showFieldHelp, setShowFieldHelp] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -86,6 +110,15 @@ export default function WebhooksPage() {
     retryCount: 3,
     timeoutMs: 30000,
   })
+
+  // Field mapping state
+  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([
+    { sourceField: 'title', targetField: 'title', enabled: true },
+    { sourceField: 'content', targetField: 'content', enabled: true },
+    { sourceField: 'format', targetField: 'format', enabled: true },
+  ])
+  const [payloadTemplate, setPayloadTemplate] = useState('{}')
+  const [templateError, setTemplateError] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
@@ -224,6 +257,20 @@ export default function WebhooksPage() {
         authConfig.headerValue = formData.authHeaderValue
       }
 
+      // Build field mappings from state
+      const mappings: Record<string, string> = {}
+      fieldMappings.filter(m => m.enabled).forEach(m => {
+        mappings[m.targetField] = m.sourceField
+      })
+
+      // Parse payload template
+      let template = {}
+      try {
+        template = JSON.parse(payloadTemplate || '{}')
+      } catch {
+        // Use empty object if invalid
+      }
+
       const payload = {
         name: formData.name,
         description: formData.description || undefined,
@@ -234,12 +281,8 @@ export default function WebhooksPage() {
         enabled: formData.enabled,
         retryCount: formData.retryCount,
         timeoutMs: formData.timeoutMs,
-        payloadTemplate: {},
-        fieldMappings: {
-          content: 'content',
-          title: 'title',
-          format: 'format',
-        },
+        payloadTemplate: template,
+        fieldMappings: mappings,
       }
 
       const url = editingId ? `/api/webhooks/${editingId}` : '/api/webhooks'
@@ -341,6 +384,15 @@ export default function WebhooksPage() {
       retryCount: 3,
       timeoutMs: 30000,
     })
+    setFieldMappings([
+      { sourceField: 'title', targetField: 'title', enabled: true },
+      { sourceField: 'content', targetField: 'content', enabled: true },
+      { sourceField: 'format', targetField: 'format', enabled: true },
+    ])
+    setPayloadTemplate('{}')
+    setTemplateError(null)
+    setShowAdvancedOptions(false)
+    setShowFieldHelp(false)
   }
 
   return (
@@ -678,6 +730,220 @@ export default function WebhooksPage() {
                     Enable webhook
                   </span>
                 </label>
+
+                {/* Field Mapping Section */}
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                  >
+                    {showAdvancedOptions ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4" />
+                    )}
+                    <Settings2 className="w-4 h-4" />
+                    Field Mapping & Payload Configuration
+                  </button>
+
+                  {showAdvancedOptions && (
+                    <div className="mt-4 space-y-4">
+                      {/* Help Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setShowFieldHelp(!showFieldHelp)}
+                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                        {showFieldHelp ? 'Hide' : 'Show'} available fields reference
+                      </button>
+
+                      {/* Field Reference Help */}
+                      {showFieldHelp && (
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3">
+                            Available Fields
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {availableFields.map((field) => (
+                              <div key={field.id} className="text-sm">
+                                <code className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded text-xs">
+                                  {`{{${field.id}}}`}
+                                </code>
+                                <span className="ml-2 text-gray-700 dark:text-gray-300">
+                                  {field.label}
+                                </span>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                  {field.description}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Field Selection */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Select Fields to Include
+                        </label>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                          Choose which content fields to send and customize their names in the payload.
+                        </p>
+                        <div className="space-y-2">
+                          {availableFields.map((field) => {
+                            const mapping = fieldMappings.find(m => m.sourceField === field.id)
+                            const isEnabled = mapping?.enabled ?? false
+                            const targetField = mapping?.targetField ?? field.id
+
+                            return (
+                              <div
+                                key={field.id}
+                                className="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`field-${field.id}`}
+                                  checked={isEnabled}
+                                  onChange={(e) => {
+                                    setFieldMappings(prev => {
+                                      const existing = prev.find(m => m.sourceField === field.id)
+                                      if (existing) {
+                                        return prev.map(m =>
+                                          m.sourceField === field.id
+                                            ? { ...m, enabled: e.target.checked }
+                                            : m
+                                        )
+                                      }
+                                      return [...prev, {
+                                        sourceField: field.id,
+                                        targetField: field.id,
+                                        enabled: e.target.checked
+                                      }]
+                                    })
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label
+                                  htmlFor={`field-${field.id}`}
+                                  className="flex-1 text-sm text-gray-700 dark:text-gray-300"
+                                >
+                                  {field.label}
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                    ({field.description})
+                                  </span>
+                                </label>
+                                {isEnabled && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500">as:</span>
+                                    <input
+                                      type="text"
+                                      value={targetField}
+                                      onChange={(e) => {
+                                        setFieldMappings(prev =>
+                                          prev.map(m =>
+                                            m.sourceField === field.id
+                                              ? { ...m, targetField: e.target.value }
+                                              : m
+                                          )
+                                        )
+                                      }}
+                                      className="w-32 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                                      placeholder={field.id}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Custom Payload Template */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            <Code className="w-4 h-4 inline mr-1" />
+                            Custom Payload Template (JSON)
+                          </label>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                          Optional: Define a custom JSON structure. Use {`{{field}}`} placeholders for dynamic values.
+                          Leave empty to use the default flat structure with your selected fields.
+                        </p>
+                        <textarea
+                          value={payloadTemplate}
+                          onChange={(e) => {
+                            setPayloadTemplate(e.target.value)
+                            try {
+                              if (e.target.value.trim()) {
+                                JSON.parse(e.target.value)
+                              }
+                              setTemplateError(null)
+                            } catch {
+                              setTemplateError('Invalid JSON syntax')
+                            }
+                          }}
+                          rows={6}
+                          placeholder={`{
+  "post": {
+    "title": "{{title}}",
+    "body": "{{content}}",
+    "summary": "{{excerpt}}"
+  },
+  "metadata": {
+    "format": "{{format}}",
+    "created": "{{createdAt}}"
+  }
+}`}
+                          className={`w-full px-4 py-2.5 font-mono text-sm border rounded-lg dark:bg-gray-700 dark:text-white ${
+                            templateError
+                              ? 'border-red-300 dark:border-red-600'
+                              : 'border-gray-300 dark:border-gray-600'
+                          }`}
+                        />
+                        {templateError && (
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" />
+                            {templateError}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Payload Preview */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Payload Preview
+                        </label>
+                        <div className="p-3 bg-gray-100 dark:bg-gray-900 rounded-lg">
+                          <pre className="text-xs text-gray-700 dark:text-gray-300 overflow-x-auto">
+                            {JSON.stringify(
+                              payloadTemplate && payloadTemplate !== '{}'
+                                ? (() => {
+                                    try {
+                                      return JSON.parse(payloadTemplate)
+                                    } catch {
+                                      return { error: 'Invalid JSON' }
+                                    }
+                                  })()
+                                : Object.fromEntries(
+                                    fieldMappings
+                                      .filter(m => m.enabled)
+                                      .map(m => [m.targetField, `{{${m.sourceField}}}`])
+                                  ),
+                              null,
+                              2
+                            )}
+                          </pre>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Placeholders like {`{{title}}`} will be replaced with actual content values when triggered.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {error && (
                   <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">

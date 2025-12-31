@@ -61,8 +61,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Transform snake_case to camelCase for frontend compatibility
+    const transcripts = (data || []).map(t => ({
+      id: t.id,
+      videoId: t.video_id,
+      title: t.video_title,
+      videoUrl: t.video_url,
+      content: t.content,
+      source: t.source,
+      hasTimestamps: t.has_timestamps,
+      projectId: t.project_id,
+      createdAt: t.created_at,
+    }))
+
     const response = NextResponse.json({
-      transcripts: data || [],
+      transcripts,
       pagination: {
         page,
         limit,
