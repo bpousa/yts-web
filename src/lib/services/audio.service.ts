@@ -10,7 +10,7 @@ import { generatePodcastWithStudio, uploadAudio } from './tts.service'
 // ============================================
 
 export interface GeneratePodcastAudioOptions {
-  segments: Array<{ speaker: string; text: string }>
+  segments: Array<{ speaker: string; text: string; emotion?: string }>
   voiceMap: Record<string, string> // speaker -> voice_id
   userId: string
   jobId: string

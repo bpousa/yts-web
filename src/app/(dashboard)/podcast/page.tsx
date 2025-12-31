@@ -37,6 +37,21 @@ interface Project {
   name: string
 }
 
+interface SavedVoice {
+  id: string
+  voice_id: string
+  name: string
+  preview_url: string | null
+  is_default_host1: boolean
+  is_default_host2: boolean
+}
+
+// Default host role descriptions
+const DEFAULT_HOST_ROLES = {
+  host1: 'Asks clarifying questions, plays devil\'s advocate, represents the audience\'s perspective',
+  host2: 'Explains concepts with enthusiasm, provides examples and analogies',
+}
+
 interface PodcastSegment {
   speaker: string
   text: string
@@ -87,8 +102,17 @@ function PodcastContent() {
   const [tone, setTone] = useState<'casual' | 'professional' | 'educational'>('casual')
   const [host1Name, setHost1Name] = useState('Alex')
   const [host2Name, setHost2Name] = useState('Jamie')
+  const [host1Role, setHost1Role] = useState(DEFAULT_HOST_ROLES.host1)
+  const [host2Role, setHost2Role] = useState(DEFAULT_HOST_ROLES.host2)
+  const [focusGuidance, setFocusGuidance] = useState('')
   const [includeIntro, setIncludeIntro] = useState(true)
   const [includeOutro, setIncludeOutro] = useState(true)
+
+  // Voice selection
+  const [savedVoices, setSavedVoices] = useState<SavedVoice[]>([])
+  const [host1VoiceId, setHost1VoiceId] = useState<string | null>(null)
+  const [host2VoiceId, setHost2VoiceId] = useState<string | null>(null)
+  const [loadingVoices, setLoadingVoices] = useState(false)
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false)
@@ -96,10 +120,24 @@ function PodcastContent() {
   const [podcastScript, setPodcastScript] = useState<PodcastScript | null>(null)
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
 
-  // Fetch user's generated contents
+  // Fetch user's generated contents and saved voices
   useEffect(() => {
     fetchGeneratedContents()
+    fetchSavedVoices()
   }, [])
+
+  const fetchSavedVoices = async () => {
+    setLoadingVoices(true)
+    try {
+      const response = await fetch('/api/voices')
+      const data = await response.json()
+      setSavedVoices(data.voices || [])
+    } catch (error) {
+      console.error('Failed to fetch voices:', error)
+    } finally {
+      setLoadingVoices(false)
+    }
+  }
 
   // Fetch transcripts when switching to transcript mode
   useEffect(() => {
@@ -184,9 +222,13 @@ function PodcastContent() {
             targetDuration: duration,
             tone,
             hostNames: { host1: host1Name, host2: host2Name },
+            hostRoles: { host1: host1Role, host2: host2Role },
+            focusGuidance: focusGuidance || undefined,
             includeIntro,
             includeOutro,
             ttsProvider: 'none',
+            voiceHost1: host1VoiceId || undefined,
+            voiceHost2: host2VoiceId || undefined,
           }),
         })
       } else {
@@ -199,6 +241,8 @@ function PodcastContent() {
             targetDuration: duration,
             tone,
             hostNames: { host1: host1Name, host2: host2Name },
+            hostRoles: { host1: host1Role, host2: host2Role },
+            focusGuidance: focusGuidance || undefined,
             includeIntro,
             includeOutro,
           }),
@@ -553,6 +597,24 @@ function PodcastContent() {
               Podcast Settings
             </h2>
 
+            {/* Episode Focus */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Episode Focus (Optional)
+              </label>
+              <textarea
+                value={focusGuidance}
+                onChange={(e) => setFocusGuidance(e.target.value)}
+                placeholder="Guide what the podcast should focus on. E.g., 'Focus on actionable sales tips, skip the personal stories, emphasize the key frameworks...'"
+                rows={2}
+                maxLength={500}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 text-right">
+                {focusGuidance.length}/500
+              </p>
+            </div>
+
             {/* Duration */}
             <div className="mb-6">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -601,36 +663,91 @@ function PodcastContent() {
               </div>
             </div>
 
-            {/* Host Names */}
+            {/* Host Configuration */}
             <div className="mb-6">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 <User className="w-4 h-4" />
-                Host Names
+                Host Configuration
               </label>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Host 1 (Skeptic)
-                  </label>
-                  <input
-                    type="text"
-                    value={host1Name}
-                    onChange={(e) => setHost1Name(e.target.value)}
-                    maxLength={20}
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Host 1 */}
+                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-3">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Host 1</p>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={host1Name}
+                      onChange={(e) => setHost1Name(e.target.value)}
+                      maxLength={20}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Voice (Optional)</label>
+                    <select
+                      value={host1VoiceId || ''}
+                      onChange={(e) => setHost1VoiceId(e.target.value || null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">Use Default</option>
+                      {savedVoices.map((voice) => (
+                        <option key={voice.id} value={voice.voice_id}>
+                          {voice.name}{voice.is_default_host1 ? ' (Default H1)' : ''}{voice.is_default_host2 ? ' (Default H2)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Role/Goal</label>
+                    <textarea
+                      value={host1Role}
+                      onChange={(e) => setHost1Role(e.target.value)}
+                      rows={2}
+                      maxLength={200}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Host 2 (Expert)
-                  </label>
-                  <input
-                    type="text"
-                    value={host2Name}
-                    onChange={(e) => setHost2Name(e.target.value)}
-                    maxLength={20}
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
+
+                {/* Host 2 */}
+                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-3">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Host 2</p>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={host2Name}
+                      onChange={(e) => setHost2Name(e.target.value)}
+                      maxLength={20}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Voice (Optional)</label>
+                    <select
+                      value={host2VoiceId || ''}
+                      onChange={(e) => setHost2VoiceId(e.target.value || null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">Use Default</option>
+                      {savedVoices.map((voice) => (
+                        <option key={voice.id} value={voice.voice_id}>
+                          {voice.name}{voice.is_default_host1 ? ' (Default H1)' : ''}{voice.is_default_host2 ? ' (Default H2)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Role/Goal</label>
+                    <textarea
+                      value={host2Role}
+                      onChange={(e) => setHost2Role(e.target.value)}
+                      rows={2}
+                      maxLength={200}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

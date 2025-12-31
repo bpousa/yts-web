@@ -37,11 +37,26 @@ export const HOST_PERSONAS = {
 
 export interface PodcastScriptOptions {
   hostNames?: { host1: string; host2: string }
+  hostRoles?: { host1?: string; host2?: string }
   targetDuration?: 'short' | 'medium' | 'long' // 3-5min, 8-12min, 15-20min
   tone?: 'casual' | 'professional' | 'educational'
+  focusGuidance?: string
   includeIntro?: boolean
   includeOutro?: boolean
 }
+
+// Default host roles (editable by users)
+export const DEFAULT_HOST_ROLES = {
+  host1: 'Asks clarifying questions, plays devil\'s advocate, represents the audience\'s perspective',
+  host2: 'Explains concepts with enthusiasm, provides examples and analogies, makes complex ideas accessible',
+}
+
+// V3-compatible emotion tags for ElevenLabs
+export const EMOTION_TAGS = [
+  'curious', 'excited', 'thoughtful', 'amused', 'serious',
+  'enthusiastic', 'cautious', 'cheerful', 'surprised', 'warm',
+  'laughing', 'chuckling', 'sigh',
+] as const
 
 const DURATION_GUIDELINES = {
   short: {
@@ -67,30 +82,39 @@ export function buildPodcastScriptPrompt(
 ): string {
   const {
     hostNames = { host1: 'Alex', host2: 'Jamie' },
+    hostRoles = DEFAULT_HOST_ROLES,
     targetDuration = 'medium',
     tone = 'casual',
+    focusGuidance,
     includeIntro = true,
     includeOutro = true,
   } = options
 
   const duration = DURATION_GUIDELINES[targetDuration]
+  const host1Role = hostRoles.host1 || DEFAULT_HOST_ROLES.host1
+  const host2Role = hostRoles.host2 || DEFAULT_HOST_ROLES.host2
+
+  // Build the focus section if provided
+  const focusSection = focusGuidance ? `
+## EPISODE FOCUS
+
+${focusGuidance}
+
+---
+` : ''
 
   return `You are a podcast script writer. Convert the following blog post into a natural, engaging two-host podcast conversation.
 
 ## HOSTS
 
-**${hostNames.host1}** (Skeptical Host):
-- Asks clarifying questions the audience might have
-- Plays devil's advocate when appropriate
-- Keeps the conversation grounded and relatable
-- Uses phrases like "Wait, so you're saying...", "But what about...", "Help me understand..."
+**${hostNames.host1}**:
+- Role: ${host1Role}
+- Keep the conversation grounded and relatable
 
-**${hostNames.host2}** (Expert Host):
-- Explains the main concepts from the blog
-- Provides examples and analogies
-- Shows genuine enthusiasm for the topic
-- Uses phrases like "Exactly! And here's the interesting part...", "Think of it like...", "What I love about this is..."
-
+**${hostNames.host2}**:
+- Role: ${host2Role}
+- Make complex ideas accessible
+${focusSection}
 ## FORMAT REQUIREMENTS
 
 1. Target length: ${duration.wordCount} (${duration.description})
@@ -111,17 +135,29 @@ Return the script as a JSON array of dialogue segments:
     {
       "speaker": "${hostNames.host1}",
       "text": "The dialogue for this segment...",
-      "emotion": "curious" | "excited" | "thoughtful" | "amused" | "serious"
+      "emotion": "curious"
     },
     {
       "speaker": "${hostNames.host2}",
       "text": "Response dialogue...",
-      "emotion": "enthusiastic" | "explanatory" | "thoughtful"
+      "emotion": "enthusiastic"
     }
   ],
   "keyTakeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"]
 }
 \`\`\`
+
+## EMOTION OPTIONS (for ElevenLabs V3 voice synthesis)
+
+Use these emotion tags to guide voice delivery:
+- curious, excited, thoughtful, amused, serious, enthusiastic
+- cautious, cheerful, surprised, warm
+- laughing, chuckling (for light moments)
+
+You can also include inline emotion cues in the text like:
+- "[laughing] That's hilarious!"
+- "[sigh] Well, that's complicated..."
+- "Wait, [surprised] really?"
 
 ## STYLE GUIDELINES
 
@@ -130,8 +166,8 @@ Return the script as a JSON array of dialogue segments:
 - Use contractions and casual language
 - Break up long explanations with questions
 - Add occasional humor or relatable analogies
-- Avoid jargon unless ${hostNames.host2} explains it
 - Each segment should be 1-3 sentences (natural speech length)
+- Include emotional delivery cues where appropriate
 
 ## BLOG CONTENT TO CONVERT
 

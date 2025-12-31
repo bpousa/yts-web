@@ -39,6 +39,13 @@ const generateFromTranscriptsSchema = z.object({
       host2: z.string().min(1).max(20),
     })
     .optional(),
+  hostRoles: z
+    .object({
+      host1: z.string().max(200).optional(),
+      host2: z.string().max(200).optional(),
+    })
+    .optional(),
+  focusGuidance: z.string().max(500).optional(),
   includeIntro: z.boolean().default(true),
   includeOutro: z.boolean().default(true),
 })
@@ -116,6 +123,8 @@ export async function POST(request: NextRequest) {
           tone: options.tone,
           ttsProvider: 'none',
           hostNames: options.hostNames || { host1: 'Alex', host2: 'Jamie' },
+          hostRoles: options.hostRoles,
+          focusGuidance: options.focusGuidance,
           sourceTranscriptIds: options.transcriptIds,
         },
       })
@@ -133,8 +142,10 @@ export async function POST(request: NextRequest) {
       // Generate the podcast script from synthesized content
       const script = await generatePodcastScript(synthesizedContent, {
         hostNames: options.hostNames,
+        hostRoles: options.hostRoles,
         targetDuration: options.targetDuration,
         tone: options.tone,
+        focusGuidance: options.focusGuidance,
         includeIntro: options.includeIntro,
         includeOutro: options.includeOutro,
       })

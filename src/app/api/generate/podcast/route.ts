@@ -31,6 +31,13 @@ const generatePodcastSchema = z.object({
       host2: z.string().min(1).max(20),
     })
     .optional(),
+  hostRoles: z
+    .object({
+      host1: z.string().max(200).optional(),
+      host2: z.string().max(200).optional(),
+    })
+    .optional(),
+  focusGuidance: z.string().max(500).optional(),
   includeIntro: z.boolean().default(true),
   includeOutro: z.boolean().default(true),
   ttsProvider: z.enum(['google', 'elevenlabs', 'none']).default('none'),
@@ -80,6 +87,8 @@ export async function POST(request: NextRequest) {
       targetDuration: options.targetDuration,
       tone: options.tone,
       hostNames: options.hostNames,
+      hostRoles: options.hostRoles,
+      focusGuidance: options.focusGuidance,
       includeIntro: options.includeIntro,
       includeOutro: options.includeOutro,
       ttsProvider: options.ttsProvider,

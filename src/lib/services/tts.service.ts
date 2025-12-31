@@ -626,6 +626,25 @@ export interface ProjectStatus {
 }
 
 /**
+ * Inject ElevenLabs V3 emotion tag at the start of text
+ * V3 supports tags like [curious], [excited], [laughing], etc.
+ */
+function injectEmotionTag(text: string, emotion?: string): string {
+  if (!emotion) return text
+
+  // Normalize emotion to V3 format
+  const normalizedEmotion = emotion.toLowerCase().trim()
+
+  // Check if emotion is already an inline tag in the text
+  if (text.includes(`[${normalizedEmotion}]`)) {
+    return text
+  }
+
+  // Add emotion tag at the start
+  return `[${normalizedEmotion}] ${text}`
+}
+
+/**
  * Create a podcast project using ElevenLabs Studio API
  * This handles multi-speaker audio generation natively
  */
@@ -638,10 +657,10 @@ export async function createPodcastProject(
     throw new Error('ElevenLabs API key not configured')
   }
 
-  // Build the from_content_json structure
+  // Build the from_content_json structure with emotion tags injected
   const contentNodes = options.segments.map(segment => ({
     voice_id: options.voiceMap[segment.speaker],
-    text: cleanTextForTTS(segment.text),
+    text: cleanTextForTTS(injectEmotionTag(segment.text, segment.emotion)),
     type: 'tts_node',
   }))
 
@@ -659,7 +678,8 @@ export async function createPodcastProject(
   formData.append('from_content_json', JSON.stringify(fromContent))
   formData.append('auto_convert', 'true')
   formData.append('quality_preset', options.qualityPreset || 'high')
-  formData.append('default_model_id', 'eleven_multilingual_v2')
+  // Use V3 model for better emotion support via context tags like [curious], [laughing]
+  formData.append('default_model_id', 'eleven_v3')
 
   // Get default voice for title (use first speaker's voice)
   const firstSpeaker = options.segments[0]?.speaker

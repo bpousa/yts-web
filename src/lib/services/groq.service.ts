@@ -135,13 +135,18 @@ export async function transcribeFromUrl(
  * For serverless environments, we need an alternative approach:
  *
  * Options:
- * 1. Use a third-party service (e.g., cobalt.tools API)
- * 2. Use a microservice running yt-dlp
- * 3. Use YouTube's audio stream directly (may be unreliable)
+ * 1. Use cobalt.tools API (requires API key for api.cobalt.tools)
+ * 2. Use a self-hosted cobalt instance
+ * 3. Use a microservice running yt-dlp
  *
- * This function provides the interface, actual implementation
- * depends on the chosen approach.
+ * Configure via environment variables:
+ * - COBALT_API_URL: The cobalt instance URL (default: https://api.cobalt.tools)
+ * - COBALT_API_KEY: Optional API key for authentication
  */
+
+// Cobalt API configuration
+const COBALT_API_URL = process.env.COBALT_API_URL || 'https://api.cobalt.tools'
+const COBALT_API_KEY = process.env.COBALT_API_KEY
 
 export interface AudioDownloadResult {
   buffer: Buffer
@@ -151,38 +156,71 @@ export interface AudioDownloadResult {
 }
 
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
-  // Option 1: Use cobalt.tools API (free, rate-limited)
-  const cobaltResponse = await fetch('https://co.wuk.sh/api/json', {
+  // Build headers
+  const headers: Record<string, string> = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  }
+
+  // Add API key if configured
+  if (COBALT_API_KEY) {
+    headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
+  }
+
+  // Use new cobalt API format
+  const cobaltResponse = await fetch(COBALT_API_URL, {
     method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       url: `https://www.youtube.com/watch?v=${videoId}`,
-      aFormat: 'mp3',
-      isAudioOnly: true,
-      audioBitrate: '32', // 32kbps for smaller file size
+      downloadMode: 'audio',
+      audioFormat: 'mp3',
+      audioBitrate: '64', // 64kbps for reasonable quality/size
     }),
   })
 
   if (!cobaltResponse.ok) {
-    const error = await cobaltResponse.text()
-    throw new Error(`Audio download failed: ${error}`)
+    const errorText = await cobaltResponse.text()
+    // Check for auth error
+    if (cobaltResponse.status === 401 || cobaltResponse.status === 403) {
+      throw new Error(
+        'Audio download failed: Cobalt API requires authentication. ' +
+        'Please configure COBALT_API_KEY environment variable or use a self-hosted instance.'
+      )
+    }
+    throw new Error(`Audio download failed (${cobaltResponse.status}): ${errorText}`)
   }
 
   const cobaltData = await cobaltResponse.json()
 
+  // Handle different response types
   if (cobaltData.status === 'error') {
-    throw new Error(cobaltData.text || 'Audio download failed')
+    const errorCode = cobaltData.error?.code || 'unknown'
+    const errorMsg = cobaltData.error?.message || cobaltData.text || 'Audio download failed'
+    throw new Error(`Cobalt error (${errorCode}): ${errorMsg}`)
   }
 
-  if (!cobaltData.url) {
-    throw new Error('No download URL returned')
+  // Get the download URL from response
+  // Response can be 'redirect' (direct URL) or 'picker' (multiple options)
+  let downloadUrl: string | undefined
+
+  if (cobaltData.status === 'redirect' && cobaltData.url) {
+    downloadUrl = cobaltData.url
+  } else if (cobaltData.status === 'picker' && cobaltData.picker?.length > 0) {
+    // Pick the first audio option
+    const audioItem = cobaltData.picker.find((item: { type?: string }) => item.type === 'audio')
+    downloadUrl = audioItem?.url || cobaltData.picker[0]?.url
+  } else if (cobaltData.url) {
+    // Fallback for direct URL
+    downloadUrl = cobaltData.url
+  }
+
+  if (!downloadUrl) {
+    throw new Error('No download URL returned from Cobalt')
   }
 
   // Download the audio file
-  const audioResponse = await fetch(cobaltData.url)
+  const audioResponse = await fetch(downloadUrl)
 
   if (!audioResponse.ok) {
     throw new Error(`Failed to download audio file: ${audioResponse.status}`)

@@ -145,6 +145,8 @@ export async function generatePodcastFromContent(
         tone: options.tone || 'casual',
         ttsProvider: options.ttsProvider || 'none',
         hostNames: options.hostNames || { host1: 'Alex', host2: 'Jamie' },
+        hostRoles: options.hostRoles,
+        focusGuidance: options.focusGuidance,
       },
     })
     .select()
@@ -160,8 +162,10 @@ export async function generatePodcastFromContent(
       // Generate the script
       const script = await generatePodcastScript(content.content, {
         hostNames: options.hostNames,
+        hostRoles: options.hostRoles,
         targetDuration: options.targetDuration,
         tone: options.tone,
+        focusGuidance: options.focusGuidance,
         includeIntro: options.includeIntro ?? true,
         includeOutro: options.includeOutro ?? true,
       })
