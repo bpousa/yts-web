@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Image as ImageIcon, Youtube, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Loader2, Image as ImageIcon, Youtube, CheckCircle2, AlertCircle, ArrowRight, RotateCcw } from 'lucide-react'
 
 import { useWizard } from '@/hooks/useWizard'
 import { WizardStepIndicator } from '@/components/generator/WizardStepIndicator'
@@ -37,6 +37,7 @@ function GeneratorContent() {
   const [isFetchingFromExtension, setIsFetchingFromExtension] = useState(false)
   const [fetchingVideos, setFetchingVideos] = useState<FetchingVideo[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
+  const [showFetchSummary, setShowFetchSummary] = useState(false)
 
   // Handle URL params from Chrome extension
   useEffect(() => {
@@ -112,12 +113,80 @@ function GeneratorContent() {
 
     if (fetchedIds.length > 0) {
       wizard.updateData({ transcriptIds: fetchedIds })
-      toast.success(`Fetched ${fetchedIds.length} transcript(s) - ready to generate!`)
     }
 
     // Force Step1 to refetch transcripts
     setRefreshKey(prev => prev + 1)
     setIsFetchingFromExtension(false)
+    setShowFetchSummary(true) // Show summary instead of going directly to wizard
+  }
+
+  const handleRetryFailed = async () => {
+    const failedVideos = fetchingVideos.filter(v => v.status === 'error')
+    if (failedVideos.length === 0) return
+
+    setShowFetchSummary(false)
+    setIsFetchingFromExtension(true)
+
+    // Reset failed videos to pending
+    setFetchingVideos(prev => prev.map(v =>
+      v.status === 'error' ? { ...v, status: 'pending' as const, error: undefined } : v
+    ))
+
+    const existingSuccessIds = wizard.data.transcriptIds || []
+    const newFetchedIds: string[] = []
+
+    for (const video of failedVideos) {
+      const idx = fetchingVideos.findIndex(v => v.videoId === video.videoId)
+
+      // Update to fetching
+      setFetchingVideos(prev => prev.map((v, i) =>
+        i === idx ? { ...v, status: 'fetching' as const } : v
+      ))
+
+      try {
+        const response = await fetch('/api/transcripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: `https://www.youtube.com/watch?v=${video.videoId}`,
+            includeTimestamps: false,
+            enableFallback: true,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (response.ok && data.transcript?.id) {
+          newFetchedIds.push(data.transcript.id)
+          setFetchingVideos(prev => prev.map((v, i) =>
+            i === idx ? { ...v, status: 'success' as const, title: data.transcript.video_title } : v
+          ))
+        } else {
+          setFetchingVideos(prev => prev.map((v, i) =>
+            i === idx ? { ...v, status: 'error' as const, error: data.error || 'Failed to fetch' } : v
+          ))
+        }
+      } catch (error) {
+        setFetchingVideos(prev => prev.map((v, i) =>
+          i === idx ? { ...v, status: 'error' as const, error: 'Network error' } : v
+        ))
+      }
+    }
+
+    if (newFetchedIds.length > 0) {
+      wizard.updateData({ transcriptIds: [...existingSuccessIds, ...newFetchedIds] })
+    }
+
+    setRefreshKey(prev => prev + 1)
+    setIsFetchingFromExtension(false)
+    setShowFetchSummary(true)
+  }
+
+  const handleContinueToGenerator = () => {
+    setShowFetchSummary(false)
+    // Clear URL params to prevent re-fetching on refresh
+    router.replace('/generator', { scroll: false })
   }
 
   const handleGenerate = async () => {
@@ -282,6 +351,87 @@ function GeneratorContent() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      ) : showFetchSummary ? (
+        // Fetch completion summary
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Transcripts Ready
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              {fetchingVideos.filter(v => v.status === 'success').length} of {fetchingVideos.length} transcripts fetched successfully
+            </p>
+          </div>
+
+          <div className="space-y-3 max-w-md mx-auto mb-8">
+            {fetchingVideos.map((video, idx) => (
+              <div
+                key={video.videoId}
+                className={`flex items-center gap-3 p-4 rounded-lg border ${
+                  video.status === 'success'
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                }`}
+              >
+                {/* Status icon */}
+                <div className="flex-shrink-0">
+                  {video.status === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                  )}
+                </div>
+
+                {/* Thumbnail */}
+                <img
+                  src={`https://i.ytimg.com/vi/${video.videoId}/default.jpg`}
+                  alt="Thumbnail"
+                  className="w-16 h-12 rounded object-cover flex-shrink-0"
+                />
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {video.title || `Video ${idx + 1}`}
+                  </p>
+                  <p className={`text-xs ${
+                    video.status === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                  }`}>
+                    {video.status === 'success' ? 'Saved to library' : (video.error || 'Failed to fetch')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-center gap-3">
+            {fetchingVideos.some(v => v.status === 'error') && (
+              <button
+                onClick={handleRetryFailed}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Retry Failed
+              </button>
+            )}
+            <button
+              onClick={handleContinueToGenerator}
+              disabled={!fetchingVideos.some(v => v.status === 'success')}
+              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                fetchingVideos.some(v => v.status === 'success')
+                  ? 'text-white bg-blue-600 hover:bg-blue-700'
+                  : 'text-gray-400 bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
+              }`}
+            >
+              Continue to Generator
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       ) : showResults ? (

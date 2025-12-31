@@ -23,6 +23,20 @@ interface GeneratedContent {
   createdAt: string
 }
 
+interface Transcript {
+  id: string
+  videoId: string
+  title: string
+  content: string
+  projectId?: string | null
+  createdAt: string
+}
+
+interface Project {
+  id: string
+  name: string
+}
+
 interface PodcastSegment {
   speaker: string
   text: string
@@ -61,6 +75,13 @@ function PodcastContent() {
   const [selectedContentId, setSelectedContentId] = useState<string | null>(contentIdFromUrl)
   const [loadingContents, setLoadingContents] = useState(true)
 
+  // Transcript state
+  const [transcripts, setTranscripts] = useState<Transcript[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<string[]>([])
+  const [loadingTranscripts, setLoadingTranscripts] = useState(false)
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState<string | null>(null)
+
   // Podcast options
   const [duration, setDuration] = useState<'short' | 'medium' | 'long'>('medium')
   const [tone, setTone] = useState<'casual' | 'professional' | 'educational'>('casual')
@@ -80,6 +101,13 @@ function PodcastContent() {
     fetchGeneratedContents()
   }, [])
 
+  // Fetch transcripts when switching to transcript mode
+  useEffect(() => {
+    if (sourceMode === 'transcripts' && transcripts.length === 0) {
+      fetchTranscripts()
+    }
+  }, [sourceMode])
+
   const fetchGeneratedContents = async () => {
     try {
       // Fetch recent generated content
@@ -93,9 +121,50 @@ function PodcastContent() {
     }
   }
 
+  const fetchTranscripts = async () => {
+    setLoadingTranscripts(true)
+    try {
+      const [transcriptsRes, projectsRes] = await Promise.all([
+        fetch('/api/transcripts?limit=100'),
+        fetch('/api/projects'),
+      ])
+
+      if (transcriptsRes.ok) {
+        const data = await transcriptsRes.json()
+        setTranscripts(data.transcripts || [])
+      }
+
+      if (projectsRes.ok) {
+        const data = await projectsRes.json()
+        setProjects(data.projects || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch transcripts:', error)
+    } finally {
+      setLoadingTranscripts(false)
+    }
+  }
+
+  const toggleTranscriptSelection = (transcriptId: string) => {
+    setSelectedTranscriptIds(prev =>
+      prev.includes(transcriptId)
+        ? prev.filter(id => id !== transcriptId)
+        : [...prev, transcriptId]
+    )
+  }
+
+  const filteredTranscripts = selectedProjectFilter
+    ? transcripts.filter(t => t.projectId === selectedProjectFilter)
+    : transcripts
+
   const handleGenerate = async () => {
-    if (!selectedContentId) {
+    // Validate based on mode
+    if (sourceMode === 'content' && !selectedContentId) {
       toast.error('Please select content to convert to podcast')
+      return
+    }
+    if (sourceMode === 'transcripts' && selectedTranscriptIds.length === 0) {
+      toast.error('Please select at least one transcript')
       return
     }
 
@@ -103,19 +172,38 @@ function PodcastContent() {
     setPodcastScript(null)
 
     try {
-      const response = await fetch('/api/generate/podcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contentId: selectedContentId,
-          targetDuration: duration,
-          tone,
-          hostNames: { host1: host1Name, host2: host2Name },
-          includeIntro,
-          includeOutro,
-          ttsProvider: 'none', // Script only for now
-        }),
-      })
+      let response: Response
+
+      if (sourceMode === 'content') {
+        // Generate from existing content
+        response = await fetch('/api/generate/podcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentId: selectedContentId,
+            targetDuration: duration,
+            tone,
+            hostNames: { host1: host1Name, host2: host2Name },
+            includeIntro,
+            includeOutro,
+            ttsProvider: 'none',
+          }),
+        })
+      } else {
+        // Generate from transcripts
+        response = await fetch('/api/generate/podcast/from-transcripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcriptIds: selectedTranscriptIds,
+            targetDuration: duration,
+            tone,
+            hostNames: { host1: host1Name, host2: host2Name },
+            includeIntro,
+            includeOutro,
+          }),
+        })
+      }
 
       const data = await response.json()
 
@@ -347,13 +435,114 @@ function PodcastContent() {
                   ))}
                 </div>
               )
-            ) : (
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            ) : loadingTranscripts ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : transcripts.length === 0 ? (
+              <div className="text-center py-8">
                 <FileText className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
-                <p>Direct transcript conversion coming soon</p>
-                <p className="text-sm mt-1">
-                  For now, generate content first, then convert to podcast
+                <p className="text-gray-500 dark:text-gray-400">
+                  No transcripts yet
                 </p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  Fetch some transcripts first, then come back to create a podcast
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Project Filter */}
+                {projects.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setSelectedProjectFilter(null)}
+                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                        selectedProjectFilter === null
+                          ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      All
+                    </button>
+                    {projects.map((project) => (
+                      <button
+                        key={project.id}
+                        onClick={() => setSelectedProjectFilter(project.id)}
+                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                          selectedProjectFilter === project.id
+                            ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {project.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Selected count */}
+                {selectedTranscriptIds.length > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <span className="text-sm text-purple-700 dark:text-purple-300">
+                      {selectedTranscriptIds.length} transcript{selectedTranscriptIds.length !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={() => setSelectedTranscriptIds([])}
+                      className="text-sm text-purple-600 hover:text-purple-800 dark:text-purple-400"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {/* Transcript list */}
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {filteredTranscripts.map((transcript) => {
+                    const isSelected = selectedTranscriptIds.includes(transcript.id)
+                    const project = projects.find(p => p.id === transcript.projectId)
+
+                    return (
+                      <button
+                        key={transcript.id}
+                        onClick={() => toggleTranscriptSelection(transcript.id)}
+                        className={`w-full text-left p-4 rounded-lg border transition-colors ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-5 h-5 mt-0.5 rounded border flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-purple-500 border-purple-500'
+                              : 'border-gray-300 dark:border-gray-600'
+                          }`}>
+                            {isSelected && (
+                              <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="currentColor">
+                                <path d="M9.5 3.5L5 8l-2.5-2.5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 dark:text-white truncate">
+                              {transcript.title}
+                            </p>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-xs text-gray-500">
+                                {new Date(transcript.createdAt).toLocaleDateString()}
+                              </span>
+                              {project && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
+                                  {project.name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -486,9 +675,9 @@ function PodcastContent() {
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={isGenerating || !selectedContentId}
+            disabled={isGenerating || (sourceMode === 'content' ? !selectedContentId : selectedTranscriptIds.length === 0)}
             className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl text-white font-medium transition-all ${
-              isGenerating || !selectedContentId
+              isGenerating || (sourceMode === 'content' ? !selectedContentId : selectedTranscriptIds.length === 0)
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
             }`}

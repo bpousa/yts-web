@@ -13,11 +13,14 @@ import {
   X,
   Webhook,
   Mic,
+  Download,
+  FolderOpen,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const navigation = [
-  { name: 'Transcripts', href: '/transcripts', icon: FileText },
+  { name: 'Fetch Transcripts', href: '/fetch', icon: Download },
+  { name: 'Library', href: '/transcripts', icon: FolderOpen },
   { name: 'Content Generator', href: '/generator', icon: Sparkles },
   { name: 'Podcast', href: '/podcast', icon: Mic },
   { name: 'Search Videos', href: '/search', icon: Search },
