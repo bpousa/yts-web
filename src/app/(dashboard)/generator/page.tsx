@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Image as ImageIcon } from 'lucide-react'
+import { Loader2, Image as ImageIcon, Youtube, CheckCircle2, AlertCircle } from 'lucide-react'
 
 import { useWizard } from '@/hooks/useWizard'
 import { WizardStepIndicator } from '@/components/generator/WizardStepIndicator'
@@ -13,6 +13,13 @@ import { Step2ContentFormat } from '@/components/generator/steps/Step2ContentFor
 import { Step3VoiceTone } from '@/components/generator/steps/Step3VoiceTone'
 import { Step4ImageExtras } from '@/components/generator/steps/Step4ImageExtras'
 import { ContentResults } from '@/components/generator/ContentResults'
+
+interface FetchingVideo {
+  videoId: string
+  status: 'pending' | 'fetching' | 'success' | 'error'
+  title?: string
+  error?: string
+}
 
 function GeneratorContent() {
   const searchParams = useSearchParams()
@@ -25,6 +32,11 @@ function GeneratorContent() {
   const [generatedContentId, setGeneratedContentId] = useState<string | null>(null)
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null)
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+
+  // Extension fetching state
+  const [isFetchingFromExtension, setIsFetchingFromExtension] = useState(false)
+  const [fetchingVideos, setFetchingVideos] = useState<FetchingVideo[]>([])
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Handle URL params from Chrome extension
   useEffect(() => {
@@ -48,11 +60,25 @@ function GeneratorContent() {
   }, [searchParams])
 
   const handleExtensionVideos = async (videoIds: string[]) => {
-    toast.info(`Fetching ${videoIds.length} transcript(s) from extension...`)
+    setIsFetchingFromExtension(true)
+
+    // Initialize video status
+    const initialVideos: FetchingVideo[] = videoIds.slice(0, 3).map(id => ({
+      videoId: id,
+      status: 'pending',
+    }))
+    setFetchingVideos(initialVideos)
 
     const fetchedIds: string[] = []
 
-    for (const videoId of videoIds.slice(0, 3)) {
+    for (let i = 0; i < initialVideos.length; i++) {
+      const videoId = initialVideos[i].videoId
+
+      // Update to fetching
+      setFetchingVideos(prev => prev.map((v, idx) =>
+        idx === i ? { ...v, status: 'fetching' } : v
+      ))
+
       try {
         const response = await fetch('/api/transcripts', {
           method: 'POST',
@@ -68,16 +94,30 @@ function GeneratorContent() {
 
         if (response.ok && data.transcript?.id) {
           fetchedIds.push(data.transcript.id)
+          setFetchingVideos(prev => prev.map((v, idx) =>
+            idx === i ? { ...v, status: 'success', title: data.transcript.video_title } : v
+          ))
+        } else {
+          setFetchingVideos(prev => prev.map((v, idx) =>
+            idx === i ? { ...v, status: 'error', error: data.error || 'Failed to fetch' } : v
+          ))
         }
       } catch (error) {
         console.error(`Failed to fetch transcript for ${videoId}:`, error)
+        setFetchingVideos(prev => prev.map((v, idx) =>
+          idx === i ? { ...v, status: 'error', error: 'Network error' } : v
+        ))
       }
     }
 
     if (fetchedIds.length > 0) {
       wizard.updateData({ transcriptIds: fetchedIds })
-      toast.success(`Fetched ${fetchedIds.length} transcript(s)`)
+      toast.success(`Fetched ${fetchedIds.length} transcript(s) - ready to generate!`)
     }
+
+    // Force Step1 to refetch transcripts
+    setRefreshKey(prev => prev + 1)
+    setIsFetchingFromExtension(false)
   }
 
   const handleGenerate = async () => {
@@ -184,7 +224,67 @@ function GeneratorContent() {
         </p>
       </div>
 
-      {showResults ? (
+      {isFetchingFromExtension ? (
+        // Fetching transcripts from Chrome extension
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full mb-4">
+              <Youtube className="w-8 h-8 text-red-600 dark:text-red-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Fetching Transcripts
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Getting transcripts from your selected videos...
+            </p>
+          </div>
+
+          <div className="space-y-3 max-w-md mx-auto">
+            {fetchingVideos.map((video, idx) => (
+              <div
+                key={video.videoId}
+                className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg"
+              >
+                {/* Status icon */}
+                <div className="flex-shrink-0">
+                  {video.status === 'pending' && (
+                    <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                  )}
+                  {video.status === 'fetching' && (
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                  )}
+                  {video.status === 'success' && (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  )}
+                  {video.status === 'error' && (
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                  )}
+                </div>
+
+                {/* Thumbnail */}
+                <img
+                  src={`https://i.ytimg.com/vi/${video.videoId}/default.jpg`}
+                  alt="Thumbnail"
+                  className="w-16 h-12 rounded object-cover flex-shrink-0"
+                />
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {video.title || `Video ${idx + 1}`}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {video.status === 'pending' && 'Waiting...'}
+                    {video.status === 'fetching' && 'Fetching transcript...'}
+                    {video.status === 'success' && 'Ready!'}
+                    {video.status === 'error' && (video.error || 'Failed')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : showResults ? (
         // Results View
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -257,6 +357,7 @@ function GeneratorContent() {
           <div className="min-h-[400px]">
             {wizard.currentStep === 1 && (
               <Step1SourceMaterial
+                key={refreshKey}
                 data={wizard.data}
                 updateData={wizard.updateData}
               />
