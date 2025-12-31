@@ -198,16 +198,22 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
     headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
   }
 
-  const response = await fetch(COBALT_API_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      downloadMode: 'audio',
-      audioFormat: 'mp3',
-      audioBitrate: '64',
-    }),
-  })
+  // Step 1: Request audio from Cobalt
+  let response: Response
+  try {
+    response = await fetch(COBALT_API_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        downloadMode: 'audio',
+        audioFormat: 'mp3',
+        audioBitrate: '64',
+      }),
+    })
+  } catch (err) {
+    throw new Error(`Cobalt connection failed: ${err instanceof Error ? err.message : 'Network error'}`)
+  }
 
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
@@ -218,21 +224,33 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
 
   const data = await response.json()
 
+  // Handle different response types: redirect, tunnel, picker
   if (data.status === 'error') {
     throw new Error(data.error?.message || 'Cobalt download failed')
   }
 
   const downloadUrl = data.url || data.picker?.[0]?.url
   if (!downloadUrl) {
-    throw new Error('No download URL from Cobalt')
+    throw new Error(`No download URL from Cobalt (status: ${data.status})`)
   }
 
-  const audioResponse = await fetch(downloadUrl)
+  // Step 2: Download the audio file
+  let audioResponse: Response
+  try {
+    audioResponse = await fetch(downloadUrl)
+  } catch (err) {
+    throw new Error(`Audio download failed: ${err instanceof Error ? err.message : 'Network error'}`)
+  }
+
   if (!audioResponse.ok) {
-    throw new Error(`Failed to download audio: ${audioResponse.status}`)
+    throw new Error(`Audio download HTTP error: ${audioResponse.status}`)
   }
 
   const buffer = Buffer.from(await audioResponse.arrayBuffer())
+
+  if (buffer.length === 0) {
+    throw new Error('Downloaded audio is empty')
+  }
 
   return {
     buffer,
