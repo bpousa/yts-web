@@ -201,6 +201,16 @@ export default function TranscriptsPage() {
     toast.success('Transcript downloaded')
   }
 
+  // Check if a video ID looks like a real YouTube video ID
+  // Real YouTube IDs contain uppercase letters, underscores, or dashes
+  // Fake IDs from migration are hex hashes (only 0-9a-f)
+  const isRealYouTubeId = (videoId: string): boolean => {
+    if (!videoId || videoId.length !== 11) return false
+    // If it contains ONLY hex characters (0-9, a-f), it's likely a hash
+    const isHexOnly = /^[0-9a-f]+$/.test(videoId)
+    return !isHexOnly
+  }
+
   const downloadAllAsZip = async () => {
     const successResults = results.filter(r => r.status === 'success')
     if (successResults.length === 0) {
@@ -422,16 +432,22 @@ export default function TranscriptsPage() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <a
-                        href={`https://youtube.com/watch?v=${transcript.videoId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        View
-                      </a>
+                      {isRealYouTubeId(transcript.videoId) ? (
+                        <a
+                          href={`https://youtube.com/watch?v=${transcript.videoId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          View on YouTube
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">
+                          Imported transcript
+                        </span>
+                      )}
                       <div className="flex items-center gap-1">
                         <button
                           onClick={(e) => {
