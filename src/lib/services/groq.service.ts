@@ -197,7 +197,9 @@ async function getProxyInnertube(): Promise<Innertube> {
   innertubeProxyInstance = await Innertube.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fetch: async (input: any, init: any) => {
-      const response = await undiciFetch(input as string, {
+      // Handle both string URLs and Request objects
+      const url = typeof input === 'string' ? input : input.url
+      const response = await undiciFetch(url, {
         ...init,
         dispatcher: proxyAgent,
       } as Parameters<typeof undiciFetch>[1])
