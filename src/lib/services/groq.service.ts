@@ -185,6 +185,9 @@ export interface AudioDownloadResult {
  * Download audio using Cobalt API
  */
 async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult> {
+  console.log('[Cobalt] Starting download for video:', videoId)
+  console.log('[Cobalt] API URL:', COBALT_API_URL)
+
   if (!COBALT_API_URL) {
     throw new Error('Cobalt not configured')
   }
@@ -201,6 +204,7 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
   // Step 1: Request audio from Cobalt
   let response: Response
   try {
+    console.log('[Cobalt] Sending request to Cobalt API...')
     response = await fetch(COBALT_API_URL, {
       method: 'POST',
       headers,
@@ -211,11 +215,15 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
         audioBitrate: '64',
       }),
     })
+    console.log('[Cobalt] API response status:', response.status)
   } catch (err) {
+    console.error('[Cobalt] Connection error:', err)
     throw new Error(`Cobalt connection failed: ${err instanceof Error ? err.message : 'Network error'}`)
   }
 
   if (!response.ok) {
+    const errorText = await response.text().catch(() => 'unknown')
+    console.error('[Cobalt] API error:', response.status, errorText)
     if (response.status === 401 || response.status === 403) {
       throw new Error('Cobalt authentication failed - check COBALT_API_KEY')
     }
@@ -223,18 +231,23 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
   }
 
   const data = await response.json()
+  console.log('[Cobalt] API response data:', JSON.stringify(data))
 
   // Handle different response types: redirect, tunnel, picker
   if (data.status === 'error') {
+    console.error('[Cobalt] Error in response:', data.error)
     throw new Error(data.error?.message || 'Cobalt download failed')
   }
 
   const downloadUrl = data.url || data.picker?.[0]?.url
+  console.log('[Cobalt] Download URL:', downloadUrl)
+
   if (!downloadUrl) {
     throw new Error(`No download URL from Cobalt (status: ${data.status})`)
   }
 
   // Step 2: Download the audio file from tunnel/redirect URL
+  console.log('[Cobalt] Fetching audio from tunnel URL...')
   let audioResponse: Response
   try {
     audioResponse = await fetch(downloadUrl, {
@@ -245,12 +258,16 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
       // Follow redirects
       redirect: 'follow',
     })
+    console.log('[Cobalt] Audio fetch status:', audioResponse.status)
+    console.log('[Cobalt] Audio headers:', JSON.stringify(Object.fromEntries(audioResponse.headers.entries())))
   } catch (err) {
+    console.error('[Cobalt] Audio fetch error:', err)
     throw new Error(`Audio fetch error: ${err instanceof Error ? err.message : 'Network error'}`)
   }
 
   if (!audioResponse.ok) {
     const errorText = await audioResponse.text().catch(() => '')
+    console.error('[Cobalt] Audio download failed:', audioResponse.status, errorText)
     throw new Error(`Audio download failed (${audioResponse.status}): ${errorText.slice(0, 100)}`)
   }
 
@@ -259,26 +276,33 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
   const reader = audioResponse.body?.getReader()
 
   if (!reader) {
+    console.error('[Cobalt] No response body reader')
     throw new Error('No response body reader available')
   }
 
   try {
+    let totalRead = 0
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      if (value) chunks.push(value)
+      if (value) {
+        chunks.push(value)
+        totalRead += value.length
+      }
     }
+    console.log('[Cobalt] Total bytes read:', totalRead)
   } finally {
     reader.releaseLock()
   }
 
   // Combine chunks into buffer
-  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
   const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
+  console.log('[Cobalt] Final buffer size:', buffer.length)
 
   if (buffer.length === 0) {
     const contentLength = audioResponse.headers.get('content-length')
     const contentType = audioResponse.headers.get('content-type')
+    console.error('[Cobalt] Empty audio buffer. Headers:', { contentLength, contentType })
     throw new Error(`Empty audio (expected: ${contentLength}, type: ${contentType})`)
   }
 
