@@ -1,10 +1,10 @@
 {
   "functions": {
     "src/app/api/transcripts/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "src/app/api/transcripts/batch/route.ts": {
-      "maxDuration": 120
+      "maxDuration": 300
     }
   }
 }
