@@ -214,12 +214,24 @@ async function getProxyInnertube(): Promise<Innertube> {
 
       // Build fetch options with proxy
       const method = init?.method?.toUpperCase() || 'GET'
-      console.log(`[Proxy] ${method} ${url.substring(0, 60)}...`)
+      console.log(`[Proxy] ${method} ${url.substring(0, 80)}...`)
 
-      // Only include body for non-GET/HEAD requests
+      // Convert Headers object to plain object if needed
+      let headers: Record<string, string> = {}
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          init.headers.forEach((value: string, key: string) => {
+            headers[key] = value
+          })
+        } else if (typeof init.headers === 'object') {
+          headers = { ...init.headers } as Record<string, string>
+        }
+      }
+
+      // Build fetch init
       const fetchInit: Parameters<typeof undiciFetch>[1] = {
         method: init?.method || 'GET',
-        headers: init?.headers,
+        headers,
         dispatcher: proxyAgent,
       }
 
@@ -228,6 +240,7 @@ async function getProxyInnertube(): Promise<Innertube> {
         fetchInit.body = init.body
       }
 
+      console.log(`[Proxy] Headers:`, Object.keys(headers).join(', '))
       const response = await undiciFetch(url, fetchInit)
       console.log(`[Proxy] Response: ${response.status}`)
       return response as unknown as Response
