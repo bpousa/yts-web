@@ -179,6 +179,9 @@ const COBALT_API_KEY = process.env.COBALT_API_KEY
 // Residential proxy for direct YouTube downloads (bypasses Cobalt)
 const RESIDENTIAL_PROXY_URL = process.env.RESIDENTIAL_PROXY_URL
 
+// Dedicated yt-dlp audio API (most reliable method)
+const YTS_AUDIO_API_URL = process.env.YTS_AUDIO_API_URL
+
 // Singleton Innertube instances
 let innertubeInstance: Innertube | null = null
 let innertubeProxyInstance: Innertube | null = null
@@ -286,6 +289,65 @@ export interface AudioDownloadResult {
 const MAX_COBALT_RETRIES = 3
 const TUNNEL_FETCH_TIMEOUT = 60000 // 60 seconds for tunnel fetch
 const CHUNK_READ_TIMEOUT = 30000 // 30 seconds between chunks
+
+/**
+ * Download audio using dedicated YTS Audio API (Railway-hosted yt-dlp)
+ * This is the most reliable method - dedicated server with yt-dlp + proxy
+ */
+async function downloadWithAudioApi(videoId: string): Promise<AudioDownloadResult> {
+  console.log('[AudioAPI] Starting download for video:', videoId)
+  console.log('[AudioAPI] API URL:', YTS_AUDIO_API_URL)
+
+  if (!YTS_AUDIO_API_URL) {
+    throw new Error('YTS_AUDIO_API_URL not configured')
+  }
+
+  const url = `${YTS_AUDIO_API_URL}/audio/${videoId}`
+  console.log('[AudioAPI] Fetching:', url)
+
+  const response = await fetch(url, {
+    headers: {
+      'Accept': 'audio/mpeg, */*',
+    },
+    signal: AbortSignal.timeout(120000), // 2 minute timeout
+  })
+
+  console.log('[AudioAPI] Response status:', response.status)
+  console.log('[AudioAPI] Content-Type:', response.headers.get('content-type'))
+  console.log('[AudioAPI] Content-Length:', response.headers.get('content-length'))
+
+  if (!response.ok) {
+    let errorMsg = `Status ${response.status}`
+    try {
+      const errorData = await response.json()
+      errorMsg = errorData.error || errorMsg
+    } catch {
+      errorMsg = await response.text().catch(() => errorMsg)
+    }
+    throw new Error(`Audio API error: ${errorMsg}`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('audio')) {
+    const text = await response.text()
+    throw new Error(`Unexpected response type: ${contentType}, body: ${text.slice(0, 200)}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
+  console.log('[AudioAPI] Downloaded:', buffer.length, 'bytes')
+
+  if (buffer.length === 0) {
+    throw new Error('Audio API returned empty response')
+  }
+
+  return {
+    buffer,
+    filename: `${videoId}.mp3`,
+    format: 'mp3',
+  }
+}
 
 /**
  * Download audio using yt-dlp (most robust method)
@@ -688,17 +750,17 @@ async function downloadWithProxy(videoId: string): Promise<AudioDownloadResult> 
 
 /**
  * Main audio download function - tries multiple methods
- * Order: yt-dlp (best) → Cobalt → Proxy+youtubei.js → youtubei.js direct
+ * Order: AudioAPI (dedicated Railway service) → Cobalt → Proxy+youtubei.js → youtubei.js direct
  */
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
   const errors: string[] = []
 
-  // Method 1: Try yt-dlp with proxy (most robust - same as Python version)
-  if (RESIDENTIAL_PROXY_URL) {
+  // Method 1: Try dedicated YTS Audio API (Railway-hosted yt-dlp with proxy)
+  if (YTS_AUDIO_API_URL) {
     try {
-      return await downloadWithYtdlp(videoId)
+      return await downloadWithAudioApi(videoId)
     } catch (err) {
-      errors.push(`yt-dlp: ${err instanceof Error ? err.message : String(err)}`)
+      errors.push(`AudioAPI: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
