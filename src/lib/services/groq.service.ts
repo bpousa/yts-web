@@ -212,32 +212,52 @@ async function getProxyInnertube(): Promise<Innertube> {
         throw new Error(`Failed to parse URL from ${typeof input}`)
       }
 
-      // Build fetch options with proxy
-      const method = init?.method?.toUpperCase() || 'GET'
+      // Extract method - check init first, then input (if Request object)
+      const inputMethod = typeof input !== 'string' ? input?.method : undefined
+      const method = (init?.method || inputMethod || 'GET').toUpperCase()
       console.log(`[Proxy] ${method} ${url.substring(0, 80)}...`)
 
-      // Convert Headers object to plain object if needed
+      // Convert Headers object to plain object - merge from input and init
       let headers: Record<string, string> = {}
+
+      // First get headers from input (Request object)
+      const inputHeaders = typeof input !== 'string' ? input?.headers : undefined
+      if (inputHeaders) {
+        if (inputHeaders instanceof Headers) {
+          inputHeaders.forEach((value: string, key: string) => {
+            headers[key] = value
+          })
+        } else if (typeof inputHeaders === 'object') {
+          headers = { ...headers, ...inputHeaders } as Record<string, string>
+        }
+      }
+
+      // Then merge/override with init headers
       if (init?.headers) {
         if (init.headers instanceof Headers) {
           init.headers.forEach((value: string, key: string) => {
             headers[key] = value
           })
         } else if (typeof init.headers === 'object') {
-          headers = { ...init.headers } as Record<string, string>
+          headers = { ...headers, ...init.headers } as Record<string, string>
         }
       }
 
+      // Get body - check init first, then input (if Request object)
+      const inputBody = typeof input !== 'string' ? input?.body : undefined
+      const body = init?.body || inputBody
+
       // Build fetch init
       const fetchInit: Parameters<typeof undiciFetch>[1] = {
-        method: init?.method || 'GET',
+        method,
         headers,
         dispatcher: proxyAgent,
       }
 
       // Include body only for POST/PUT/PATCH
-      if (init?.body && method !== 'GET' && method !== 'HEAD') {
-        fetchInit.body = init.body
+      if (body && method !== 'GET' && method !== 'HEAD') {
+        fetchInit.body = body
+        fetchInit.duplex = 'half' // Required for Node.js fetch with body streams
       }
 
       console.log(`[Proxy] Headers:`, Object.keys(headers).join(', '))
