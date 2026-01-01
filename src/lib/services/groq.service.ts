@@ -197,8 +197,21 @@ async function getProxyInnertube(): Promise<Innertube> {
   innertubeProxyInstance = await Innertube.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fetch: async (input: any, init: any) => {
-      // Handle both string URLs and Request objects
-      const url = typeof input === 'string' ? input : input.url
+      // Handle string URLs, Request objects, and URL objects
+      let url: string
+      if (typeof input === 'string') {
+        url = input
+      } else if (input instanceof URL) {
+        url = input.toString()
+      } else if (input?.url) {
+        url = input.url
+      } else if (input?.href) {
+        url = input.href
+      } else {
+        console.error('[Proxy] Unknown input type:', typeof input, input)
+        throw new Error(`Failed to parse URL from ${typeof input}`)
+      }
+
       const response = await undiciFetch(url, {
         ...init,
         dispatcher: proxyAgent,
