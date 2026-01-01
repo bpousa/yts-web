@@ -212,14 +212,24 @@ async function getProxyInnertube(): Promise<Innertube> {
         throw new Error(`Failed to parse URL from ${typeof input}`)
       }
 
-      // Strip body from GET/HEAD requests (undici doesn't allow it)
+      // Build fetch options with proxy
       const method = init?.method?.toUpperCase() || 'GET'
-      const fetchInit = { ...init, dispatcher: proxyAgent }
-      if (method === 'GET' || method === 'HEAD') {
-        delete fetchInit.body
+      console.log(`[Proxy] ${method} ${url.substring(0, 60)}...`)
+
+      // Only include body for non-GET/HEAD requests
+      const fetchInit: Parameters<typeof undiciFetch>[1] = {
+        method: init?.method || 'GET',
+        headers: init?.headers,
+        dispatcher: proxyAgent,
       }
 
-      const response = await undiciFetch(url, fetchInit as Parameters<typeof undiciFetch>[1])
+      // Include body only for POST/PUT/PATCH
+      if (init?.body && method !== 'GET' && method !== 'HEAD') {
+        fetchInit.body = init.body
+      }
+
+      const response = await undiciFetch(url, fetchInit)
+      console.log(`[Proxy] Response: ${response.status}`)
       return response as unknown as Response
     },
   })
