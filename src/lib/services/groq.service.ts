@@ -194,16 +194,16 @@ async function getProxyInnertube(): Promise<Innertube> {
   console.log('[Proxy] Creating Innertube with proxy...')
   const proxyAgent = new ProxyAgent(RESIDENTIAL_PROXY_URL)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   innertubeProxyInstance = await Innertube.create({
-    fetch: async (input, init) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    fetch: async (input: any, init: any) => {
       const response = await undiciFetch(input as string, {
         ...init,
         dispatcher: proxyAgent,
       } as Parameters<typeof undiciFetch>[1])
       return response as unknown as Response
     },
-  } as any)
+  })
 
   console.log('[Proxy] Innertube with proxy created')
   return innertubeProxyInstance
