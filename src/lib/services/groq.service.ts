@@ -227,7 +227,15 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
     if (response.status === 401 || response.status === 403) {
       throw new Error('Cobalt authentication failed - check COBALT_API_KEY')
     }
-    throw new Error(`Cobalt error: ${response.status}`)
+    // Parse error response for better error message
+    let errorDetail = ''
+    try {
+      const errData = JSON.parse(errorText)
+      errorDetail = errData.error?.code || errData.error?.message || errorText.slice(0, 100)
+    } catch {
+      errorDetail = errorText.slice(0, 100)
+    }
+    throw new Error(`Cobalt error: ${response.status} - ${errorDetail}`)
   }
 
   const data = await response.json()
@@ -235,8 +243,15 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
 
   // Handle different response types: redirect, tunnel, picker
   if (data.status === 'error') {
-    console.error('[Cobalt] Error in response:', data.error)
-    throw new Error(data.error?.message || 'Cobalt download failed')
+    const errCode = data.error?.code || 'unknown'
+    console.error('[Cobalt] Error in response:', errCode, data.error)
+    // Map common error codes to user-friendly messages
+    const errorMessages: Record<string, string> = {
+      'error.api.youtube.login': 'This video requires YouTube login (age-restricted or private)',
+      'error.api.youtube.unavailable': 'Video unavailable on YouTube',
+      'error.api.content.video.unavailable': 'Video content unavailable',
+    }
+    throw new Error(errorMessages[errCode] || `Cobalt: ${errCode}`)
   }
 
   const downloadUrl = data.url || data.picker?.[0]?.url
