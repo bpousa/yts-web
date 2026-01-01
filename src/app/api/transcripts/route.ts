@@ -160,9 +160,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Transform to camelCase to match GET response and UI expectations
     const response = NextResponse.json({
-      transcript,
-      source: result.source,
+      id: transcript.id,
+      videoId: transcript.video_id,
+      title: transcript.video_title,
+      videoUrl: transcript.video_url,
+      content: transcript.content,
+      source: transcript.source === 'official' ? 'youtube' : transcript.source,
+      hasTimestamps: transcript.has_timestamps,
+      projectId: transcript.project_id,
+      createdAt: transcript.created_at,
       message: result.source === 'whisper'
         ? 'Transcript fetched using audio transcription (no captions available)'
         : 'Transcript fetched successfully',

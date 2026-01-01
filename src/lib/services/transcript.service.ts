@@ -159,18 +159,13 @@ async function fetchYouTubeTranscript(
 
   const html = await response.text()
 
-  // Extract caption tracks from the page
-  const captionMatch = html.match(/"captions":\s*(\{[^}]+?"playerCaptionsTracklistRenderer"[^}]+\})/)
-
-  if (!captionMatch) {
-    throw new Error('No captions available for this video')
-  }
-
-  // Find the caption track URL
-  const captionUrlMatch = html.match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
+  // Find the caption track URL directly
+  // The old regex for "captions" object couldn't handle nested braces and always failed
+  // Instead, we just look for the timedtext baseUrl which is what we actually need
+  const captionUrlMatch = html.match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/)
 
   if (!captionUrlMatch) {
-    throw new Error('Could not find caption track URL')
+    throw new Error('No captions available for this video')
   }
 
   // Clean up the URL (unescape unicode)

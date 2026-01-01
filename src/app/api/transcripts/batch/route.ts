@@ -54,8 +54,19 @@ export async function POST(request: NextRequest) {
       ? await getOrCreateProject(supabase, user.id, projectName)
       : null
 
-    // Save successful transcripts
-    const savedTranscripts: unknown[] = []
+    // Save successful transcripts and transform to camelCase
+    interface TranscriptRow {
+      id: string
+      video_id: string
+      video_title: string
+      video_url: string
+      content: string
+      source: string
+      has_timestamps: boolean | null
+      project_id: string | null
+      created_at: string | null
+    }
+    const savedTranscripts: TranscriptRow[] = []
     for (const result of results.successful) {
       const { data: transcript, error: insertError } = await supabase
         .from('transcripts')
@@ -72,13 +83,24 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (!insertError && transcript) {
-        savedTranscripts.push(transcript)
+        savedTranscripts.push(transcript as TranscriptRow)
       }
     }
 
+    // Transform to camelCase to match UI expectations
+    // UI expects `successful` to be an array (not a count)
     const response = NextResponse.json({
-      transcripts: savedTranscripts,
-      successful: results.successful.length,
+      successful: savedTranscripts.map(t => ({
+        id: t.id,
+        videoId: t.video_id,
+        title: t.video_title,
+        videoUrl: t.video_url,
+        content: t.content,
+        source: t.source === 'official' ? 'youtube' : t.source,
+        hasTimestamps: t.has_timestamps,
+        projectId: t.project_id,
+        createdAt: t.created_at,
+      })),
       failed: results.failed,
       total: urls.length,
     }, { status: 201 })
