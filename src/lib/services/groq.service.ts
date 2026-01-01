@@ -6,6 +6,7 @@
 
 import Groq from 'groq-sdk'
 import { Innertube } from 'youtubei.js'
+import { ProxyAgent, fetch as undiciFetch } from 'undici'
 
 // ============================================
 // CONFIGURATION
@@ -171,8 +172,42 @@ export async function transcribeFromUrl(
 const COBALT_API_URL = process.env.COBALT_API_URL
 const COBALT_API_KEY = process.env.COBALT_API_KEY
 
-// Singleton Innertube instance for youtubei.js fallback
+// Residential proxy for direct YouTube downloads (bypasses Cobalt)
+const RESIDENTIAL_PROXY_URL = process.env.RESIDENTIAL_PROXY_URL
+
+// Singleton Innertube instances
 let innertubeInstance: Innertube | null = null
+let innertubeProxyInstance: Innertube | null = null
+
+/**
+ * Get or create Innertube instance with proxy support
+ */
+async function getProxyInnertube(): Promise<Innertube> {
+  if (innertubeProxyInstance) {
+    return innertubeProxyInstance
+  }
+
+  if (!RESIDENTIAL_PROXY_URL) {
+    throw new Error('RESIDENTIAL_PROXY_URL not configured')
+  }
+
+  console.log('[Proxy] Creating Innertube with proxy...')
+  const proxyAgent = new ProxyAgent(RESIDENTIAL_PROXY_URL)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  innertubeProxyInstance = await Innertube.create({
+    fetch: async (input, init) => {
+      const response = await undiciFetch(input as string, {
+        ...init,
+        dispatcher: proxyAgent,
+      } as Parameters<typeof undiciFetch>[1])
+      return response as unknown as Response
+    },
+  } as any)
+
+  console.log('[Proxy] Innertube with proxy created')
+  return innertubeProxyInstance
+}
 
 export interface AudioDownloadResult {
   buffer: Buffer
@@ -181,8 +216,13 @@ export interface AudioDownloadResult {
   format: string
 }
 
+// Retry and timeout configuration
+const MAX_COBALT_RETRIES = 3
+const TUNNEL_FETCH_TIMEOUT = 60000 // 60 seconds for tunnel fetch
+const CHUNK_READ_TIMEOUT = 30000 // 30 seconds between chunks
+
 /**
- * Download audio using Cobalt API
+ * Download audio using Cobalt API with retry logic
  */
 async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult> {
   console.log('[Cobalt] Starting download for video:', videoId)
@@ -201,131 +241,186 @@ async function downloadWithCobalt(videoId: string): Promise<AudioDownloadResult>
     headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
   }
 
-  // Step 1: Request audio from Cobalt
-  let response: Response
-  try {
-    console.log('[Cobalt] Sending request to Cobalt API...')
-    response = await fetch(COBALT_API_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        downloadMode: 'audio',
-        audioFormat: 'mp3',
-        audioBitrate: '64',
-      }),
-    })
-    console.log('[Cobalt] API response status:', response.status)
-  } catch (err) {
-    console.error('[Cobalt] Connection error:', err)
-    throw new Error(`Cobalt connection failed: ${err instanceof Error ? err.message : 'Network error'}`)
-  }
+  let lastError: Error | null = null
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'unknown')
-    console.error('[Cobalt] API error:', response.status, errorText)
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('Cobalt authentication failed - check COBALT_API_KEY')
-    }
-    // Parse error response for better error message
-    let errorDetail = ''
+  // Retry loop - each attempt gets a fresh tunnel URL
+  for (let attempt = 1; attempt <= MAX_COBALT_RETRIES; attempt++) {
     try {
-      const errData = JSON.parse(errorText)
-      errorDetail = errData.error?.code || errData.error?.message || errorText.slice(0, 100)
-    } catch {
-      errorDetail = errorText.slice(0, 100)
-    }
-    throw new Error(`Cobalt error: ${response.status} - ${errorDetail}`)
-  }
+      console.log(`[Cobalt] Attempt ${attempt}/${MAX_COBALT_RETRIES}`)
 
-  const data = await response.json()
-  console.log('[Cobalt] API response data:', JSON.stringify(data))
+      // Step 1: Request audio from Cobalt (get fresh tunnel URL each time)
+      let response: Response
+      try {
+        console.log('[Cobalt] Sending request to Cobalt API...')
+        response = await fetch(COBALT_API_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            downloadMode: 'audio',
+            audioFormat: 'mp3',
+            audioBitrate: '64',
+          }),
+          signal: AbortSignal.timeout(30000), // 30s timeout for API request
+        })
+        console.log('[Cobalt] API response status:', response.status)
+      } catch (err) {
+        console.error('[Cobalt] Connection error:', err)
+        throw new Error(`Cobalt connection failed: ${err instanceof Error ? err.message : 'Network error'}`)
+      }
 
-  // Handle different response types: redirect, tunnel, picker
-  if (data.status === 'error') {
-    const errCode = data.error?.code || 'unknown'
-    console.error('[Cobalt] Error in response:', errCode, data.error)
-    // Map common error codes to user-friendly messages
-    const errorMessages: Record<string, string> = {
-      'error.api.youtube.login': 'This video requires YouTube login (age-restricted or private)',
-      'error.api.youtube.unavailable': 'Video unavailable on YouTube',
-      'error.api.content.video.unavailable': 'Video content unavailable',
-    }
-    throw new Error(errorMessages[errCode] || `Cobalt: ${errCode}`)
-  }
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'unknown')
+        console.error('[Cobalt] API error:', response.status, errorText)
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Cobalt authentication failed - check COBALT_API_KEY')
+        }
+        let errorDetail = ''
+        try {
+          const errData = JSON.parse(errorText)
+          errorDetail = errData.error?.code || errData.error?.message || errorText.slice(0, 100)
+        } catch {
+          errorDetail = errorText.slice(0, 100)
+        }
+        throw new Error(`Cobalt error: ${response.status} - ${errorDetail}`)
+      }
 
-  const downloadUrl = data.url || data.picker?.[0]?.url
-  console.log('[Cobalt] Download URL:', downloadUrl)
+      const data = await response.json()
+      console.log('[Cobalt] API response data:', JSON.stringify(data))
 
-  if (!downloadUrl) {
-    throw new Error(`No download URL from Cobalt (status: ${data.status})`)
-  }
+      if (data.status === 'error') {
+        const errCode = data.error?.code || 'unknown'
+        console.error('[Cobalt] Error in response:', errCode, data.error)
+        const errorMessages: Record<string, string> = {
+          'error.api.youtube.login': 'This video requires YouTube login (age-restricted or private)',
+          'error.api.youtube.unavailable': 'Video unavailable on YouTube',
+          'error.api.content.video.unavailable': 'Video content unavailable',
+        }
+        throw new Error(errorMessages[errCode] || `Cobalt: ${errCode}`)
+      }
 
-  // Step 2: Download the audio file from tunnel/redirect URL
-  console.log('[Cobalt] Fetching audio from tunnel URL...')
-  let audioResponse: Response
-  try {
-    audioResponse = await fetch(downloadUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': '*/*',
-      },
-      // Follow redirects
-      redirect: 'follow',
-    })
-    console.log('[Cobalt] Audio fetch status:', audioResponse.status)
-    console.log('[Cobalt] Audio headers:', JSON.stringify(Object.fromEntries(audioResponse.headers.entries())))
-  } catch (err) {
-    console.error('[Cobalt] Audio fetch error:', err)
-    throw new Error(`Audio fetch error: ${err instanceof Error ? err.message : 'Network error'}`)
-  }
+      const downloadUrl = data.url || data.picker?.[0]?.url
+      console.log('[Cobalt] Download URL:', downloadUrl)
 
-  if (!audioResponse.ok) {
-    const errorText = await audioResponse.text().catch(() => '')
-    console.error('[Cobalt] Audio download failed:', audioResponse.status, errorText)
-    throw new Error(`Audio download failed (${audioResponse.status}): ${errorText.slice(0, 100)}`)
-  }
+      if (!downloadUrl) {
+        throw new Error(`No download URL from Cobalt (status: ${data.status})`)
+      }
 
-  // Read response body as chunks to handle streaming
-  const chunks: Uint8Array[] = []
-  const reader = audioResponse.body?.getReader()
+      // Step 2: Download the audio file from tunnel/redirect URL with timeout
+      console.log('[Cobalt] Fetching audio from tunnel URL...')
+      let audioResponse: Response
+      try {
+        audioResponse = await fetch(downloadUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(TUNNEL_FETCH_TIMEOUT),
+        })
+        console.log('[Cobalt] Audio fetch status:', audioResponse.status)
+        console.log('[Cobalt] Audio headers:', JSON.stringify(Object.fromEntries(audioResponse.headers.entries())))
+      } catch (err) {
+        console.error('[Cobalt] Audio fetch error:', err)
+        throw new Error(`Audio fetch error: ${err instanceof Error ? err.message : 'Network error'}`)
+      }
 
-  if (!reader) {
-    console.error('[Cobalt] No response body reader')
-    throw new Error('No response body reader available')
-  }
+      if (!audioResponse.ok) {
+        const errorText = await audioResponse.text().catch(() => '')
+        console.error('[Cobalt] Audio download failed:', audioResponse.status, errorText)
+        throw new Error(`Audio download failed (${audioResponse.status}): ${errorText.slice(0, 100)}`)
+      }
 
-  try {
-    let totalRead = 0
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        chunks.push(value)
-        totalRead += value.length
+      // Check Content-Length before reading stream
+      const contentLength = audioResponse.headers.get('content-length')
+      console.log('[Cobalt] Content-Length header:', contentLength)
+      if (contentLength === '0') {
+        console.warn(`[Cobalt] Attempt ${attempt}: Empty Content-Length, will retry with fresh tunnel`)
+        throw new Error('Tunnel returned empty response (Content-Length: 0)')
+      }
+
+      // Read response body as chunks with timeout
+      const chunks: Uint8Array[] = []
+      const reader = audioResponse.body?.getReader()
+
+      if (!reader) {
+        console.error('[Cobalt] No response body reader')
+        throw new Error('No response body reader available')
+      }
+
+      try {
+        let totalRead = 0
+        while (true) {
+          // Race between chunk read and timeout
+          const readPromise = reader.read()
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Chunk read timeout - stream stalled')), CHUNK_READ_TIMEOUT)
+          })
+
+          const { done, value } = await Promise.race([readPromise, timeoutPromise])
+          if (done) break
+          if (value) {
+            chunks.push(value)
+            totalRead += value.length
+            // Log progress every 500KB
+            if (totalRead % (500 * 1024) < value.length) {
+              console.log(`[Cobalt] Downloaded ${(totalRead / 1024).toFixed(0)}KB...`)
+            }
+          }
+        }
+        console.log('[Cobalt] Total bytes read:', totalRead)
+      } finally {
+        reader.releaseLock()
+      }
+
+      // Combine chunks into buffer
+      const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
+      console.log('[Cobalt] Final buffer size:', buffer.length)
+
+      // Check if buffer is empty and retry if so
+      if (buffer.length === 0) {
+        console.warn(`[Cobalt] Attempt ${attempt}: Empty audio buffer, retrying with fresh tunnel...`)
+        lastError = new Error('Audio download returned empty buffer')
+        continue // Try again with fresh tunnel URL
+      }
+
+      // Success! Return the buffer
+      console.log(`[Cobalt] Successfully downloaded ${(buffer.length / 1024).toFixed(0)}KB audio on attempt ${attempt}`)
+      return {
+        buffer,
+        filename: `${videoId}.mp3`,
+        format: 'mp3',
+      }
+
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      console.error(`[Cobalt] Attempt ${attempt} failed:`, lastError.message)
+
+      // Don't retry on authentication or permanent errors
+      if (lastError.message.includes('authentication') ||
+          lastError.message.includes('age-restricted') ||
+          lastError.message.includes('unavailable')) {
+        throw lastError
+      }
+
+      // Wait before retry (exponential backoff)
+      if (attempt < MAX_COBALT_RETRIES) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
+        console.log(`[Cobalt] Waiting ${delay}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
       }
     }
-    console.log('[Cobalt] Total bytes read:', totalRead)
-  } finally {
-    reader.releaseLock()
   }
 
-  // Combine chunks into buffer
-  const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
-  console.log('[Cobalt] Final buffer size:', buffer.length)
-
-  if (buffer.length === 0) {
-    const contentLength = audioResponse.headers.get('content-length')
-    const contentType = audioResponse.headers.get('content-type')
-    console.error('[Cobalt] Empty audio buffer. Headers:', { contentLength, contentType })
-    throw new Error(`Empty audio (expected: ${contentLength}, type: ${contentType})`)
-  }
-
-  return {
-    buffer,
-    filename: `${videoId}.mp3`,
-    format: 'mp3',
-  }
+  // All retries exhausted
+  throw new Error(
+    `Audio download failed after ${MAX_COBALT_RETRIES} attempts. ` +
+    (lastError ? lastError.message : 'Unknown error') +
+    '\n\nThis may be due to:\n' +
+    '- Video is age-restricted or requires login\n' +
+    '- Regional restrictions on the video\n' +
+    '- Temporary proxy/network issues (try again later)'
+  )
 }
 
 /**
@@ -380,6 +475,87 @@ async function downloadWithYoutubei(videoId: string): Promise<AudioDownloadResul
 }
 
 /**
+ * Download audio using youtubei.js with residential proxy
+ * This bypasses Cobalt and downloads directly through the DataImpulse proxy
+ * All requests (including video info) go through the proxy
+ */
+async function downloadWithProxy(videoId: string): Promise<AudioDownloadResult> {
+  console.log('[Proxy] Starting download for video:', videoId)
+
+  if (!RESIDENTIAL_PROXY_URL) {
+    throw new Error('RESIDENTIAL_PROXY_URL not configured')
+  }
+
+  console.log('[Proxy] Using proxy:', RESIDENTIAL_PROXY_URL.replace(/:[^:@]+@/, ':****@'))
+
+  // Get proxy-enabled Innertube instance (all requests go through proxy)
+  const innertube = await getProxyInnertube()
+
+  const info = await innertube.getInfo(videoId)
+
+  if (!info?.streaming_data) {
+    throw new Error('No streaming data available')
+  }
+
+  const audioFormats = info.streaming_data.adaptive_formats
+    ?.filter(f => f.has_audio && !f.has_video)
+    ?.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0))
+
+  if (!audioFormats?.length) {
+    throw new Error('No audio formats available')
+  }
+
+  const format = audioFormats[0]
+  const audioUrl = await format.decipher(innertube.session.player)
+
+  if (!audioUrl) {
+    throw new Error('Failed to decipher audio URL')
+  }
+
+  console.log('[Proxy] Downloading from:', audioUrl.substring(0, 80) + '...')
+
+  // Download using proxy with undici
+  const proxyAgent = new ProxyAgent(RESIDENTIAL_PROXY_URL)
+  const response = await undiciFetch(audioUrl, {
+    dispatcher: proxyAgent,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': '*/*',
+    },
+    signal: AbortSignal.timeout(120000), // 2 minute timeout
+  })
+
+  console.log('[Proxy] Response status:', response.status)
+
+  if (!response.ok) {
+    throw new Error(`Proxy download failed: ${response.status}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
+  console.log('[Proxy] Downloaded:', buffer.length, 'bytes')
+
+  if (buffer.length === 0) {
+    throw new Error('Proxy returned empty response')
+  }
+
+  if (buffer.length > MAX_FILE_SIZE) {
+    throw new Error(`Audio too large (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`)
+  }
+
+  const mimeType = format.mime_type || 'audio/webm'
+  const extension = mimeType.includes('mp4') ? 'm4a' : 'webm'
+
+  return {
+    buffer,
+    filename: `${videoId}.${extension}`,
+    duration: info.basic_info.duration,
+    format: extension,
+  }
+}
+
+/**
  * Main audio download function - tries multiple methods
  */
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
@@ -394,7 +570,16 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
     }
   }
 
-  // Method 2: Try youtubei.js
+  // Method 2: Try direct proxy download (undici + residential proxy)
+  if (RESIDENTIAL_PROXY_URL) {
+    try {
+      return await downloadWithProxy(videoId)
+    } catch (err) {
+      errors.push(`Proxy: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // Method 3: Try youtubei.js (datacenter IP - may be blocked)
   try {
     return await downloadWithYoutubei(videoId)
   } catch (err) {
@@ -402,13 +587,7 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
   }
 
   // All methods failed
-  throw new Error(
-    'Audio download failed. ' +
-    (COBALT_API_URL
-      ? `Errors: ${errors.join('; ')}`
-      : 'Configure COBALT_API_URL environment variable for AI transcription fallback. ' +
-        'See: https://github.com/imputnet/cobalt')
-  )
+  throw new Error(`Audio download failed. Errors: ${errors.join('; ')}`)
 }
 
 // ============================================
