@@ -333,11 +333,22 @@ async function downloadWithYtdlp(videoId: string): Promise<AudioDownloadResult> 
       filename: `${videoId}.mp3`,
       format: 'mp3',
     }
-  } catch (err) {
+  } catch (err: unknown) {
     // Clean up on error
     await unlink(outputPath).catch(() => {})
-    console.error('[yt-dlp] Error:', err)
-    throw new Error(`yt-dlp failed: ${err instanceof Error ? err.message : String(err)}`)
+
+    // Extract detailed error info
+    const error = err as { message?: string; stderr?: string; stdout?: string; code?: number }
+    console.error('[yt-dlp] Error details:', {
+      message: error?.message,
+      stderr: error?.stderr,
+      stdout: error?.stdout,
+      code: error?.code,
+      raw: String(err),
+    })
+
+    const errorMsg = error?.stderr || error?.message || String(err) || 'Unknown error'
+    throw new Error(`yt-dlp failed: ${errorMsg}`)
   }
 }
 
