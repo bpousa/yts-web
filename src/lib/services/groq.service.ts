@@ -305,7 +305,7 @@ async function downloadWithYtdlp(videoId: string): Promise<AudioDownloadResult> 
     await youtubedl(url, {
       extractAudio: true,
       audioFormat: 'mp3',
-      audioQuality: '32k', // 32kbps like Python version
+      audioQuality: 9, // 0 (best) to 9 (worst), 9 ≈ 32kbps
       output: outputPath,
       proxy: RESIDENTIAL_PROXY_URL || undefined,
       noWarnings: true,
