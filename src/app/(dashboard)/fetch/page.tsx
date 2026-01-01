@@ -271,6 +271,16 @@ export default function FetchPage() {
           )}
         </button>
 
+        {/* Loading Notice */}
+        {loading && useAIFallback && (
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              <strong>Note:</strong> If YouTube captions aren&apos;t available, we&apos;ll automatically use AI transcription.
+              This may take 30-60 seconds per video as we download and process the audio.
+            </p>
+          </div>
+        )}
+
         {/* Results */}
         {results.length > 0 && (
           <div className="mt-8 space-y-4">
@@ -320,8 +330,14 @@ export default function FetchPage() {
                           {result.title}
                         </p>
                         {result.status === 'success' ? (
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Source: {result.source === 'youtube' ? 'YouTube Captions' : 'AI Transcription'}
+                          <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                            Source: {result.source === 'youtube' ? (
+                              <span>YouTube Captions</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded-full text-xs font-medium">
+                                AI Transcription
+                              </span>
+                            )}
                           </p>
                         ) : (
                           <p className="text-sm text-red-500 dark:text-red-400">
@@ -372,6 +388,7 @@ export default function FetchPage() {
         <ul className="space-y-2 text-sm text-blue-800 dark:text-blue-400">
           <li>• You can paste multiple YouTube URLs, one per line</li>
           <li>• Videos without captions will be transcribed using AI (if enabled)</li>
+          <li>• <strong>AI transcription takes 30-60 seconds per video</strong> - we download the audio and process it with Whisper</li>
           <li>• Transcripts are saved to your library automatically</li>
           <li>• Use the Chrome extension to send videos directly from YouTube</li>
         </ul>
