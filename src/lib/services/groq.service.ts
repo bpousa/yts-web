@@ -7,6 +7,10 @@
 import Groq from 'groq-sdk'
 import { Innertube } from 'youtubei.js'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
+import youtubedl from 'youtube-dl-exec'
+import { readFile, unlink } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 // ============================================
 // CONFIGURATION
@@ -282,6 +286,60 @@ export interface AudioDownloadResult {
 const MAX_COBALT_RETRIES = 3
 const TUNNEL_FETCH_TIMEOUT = 60000 // 60 seconds for tunnel fetch
 const CHUNK_READ_TIMEOUT = 30000 // 30 seconds between chunks
+
+/**
+ * Download audio using yt-dlp (most robust method)
+ * This is the same approach as the working Python version
+ */
+async function downloadWithYtdlp(videoId: string): Promise<AudioDownloadResult> {
+  console.log('[yt-dlp] Starting download for video:', videoId)
+
+  const url = `https://www.youtube.com/watch?v=${videoId}`
+  const outputPath = join(tmpdir(), `${videoId}_${Date.now()}.mp3`)
+
+  try {
+    console.log('[yt-dlp] Output path:', outputPath)
+    console.log('[yt-dlp] Using proxy:', RESIDENTIAL_PROXY_URL ? 'Yes' : 'No')
+
+    // Run yt-dlp with same settings as Python version
+    await youtubedl(url, {
+      extractAudio: true,
+      audioFormat: 'mp3',
+      audioQuality: '32k', // 32kbps like Python version
+      output: outputPath,
+      proxy: RESIDENTIAL_PROXY_URL || undefined,
+      noWarnings: true,
+      noCheckCertificates: true,
+      preferFreeFormats: true,
+      // Add user agent to avoid detection
+      addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
+    })
+
+    console.log('[yt-dlp] Download complete, reading file...')
+
+    // Read the downloaded file
+    const buffer = await readFile(outputPath)
+    console.log('[yt-dlp] File size:', buffer.length, 'bytes')
+
+    // Clean up temp file
+    await unlink(outputPath).catch(() => {})
+
+    if (buffer.length === 0) {
+      throw new Error('yt-dlp returned empty file')
+    }
+
+    return {
+      buffer,
+      filename: `${videoId}.mp3`,
+      format: 'mp3',
+    }
+  } catch (err) {
+    // Clean up on error
+    await unlink(outputPath).catch(() => {})
+    console.error('[yt-dlp] Error:', err)
+    throw new Error(`yt-dlp failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
 
 /**
  * Download audio using Cobalt API with retry logic
@@ -619,11 +677,21 @@ async function downloadWithProxy(videoId: string): Promise<AudioDownloadResult> 
 
 /**
  * Main audio download function - tries multiple methods
+ * Order: yt-dlp (best) → Cobalt → Proxy+youtubei.js → youtubei.js direct
  */
 export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownloadResult> {
   const errors: string[] = []
 
-  // Method 1: Try Cobalt if configured
+  // Method 1: Try yt-dlp with proxy (most robust - same as Python version)
+  if (RESIDENTIAL_PROXY_URL) {
+    try {
+      return await downloadWithYtdlp(videoId)
+    } catch (err) {
+      errors.push(`yt-dlp: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // Method 2: Try Cobalt if configured
   if (COBALT_API_URL) {
     try {
       return await downloadWithCobalt(videoId)
@@ -632,7 +700,7 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
     }
   }
 
-  // Method 2: Try direct proxy download (undici + residential proxy)
+  // Method 3: Try direct proxy download (undici + residential proxy + youtubei.js)
   if (RESIDENTIAL_PROXY_URL) {
     try {
       return await downloadWithProxy(videoId)
@@ -641,7 +709,7 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
     }
   }
 
-  // Method 3: Try youtubei.js (datacenter IP - may be blocked)
+  // Method 4: Try youtubei.js direct (datacenter IP - usually blocked)
   try {
     return await downloadWithYoutubei(videoId)
   } catch (err) {
