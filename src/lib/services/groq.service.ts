@@ -773,7 +773,14 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
     }
   }
 
-  // Method 3: Try direct proxy download (undici + residential proxy + youtubei.js)
+  // Method 3: Try local yt-dlp execution (works best off-Vercel with correct binary)
+  try {
+    return await downloadWithYtdlp(videoId)
+  } catch (err) {
+    errors.push(`yt-dlp: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  // Method 4: Try direct proxy download (undici + residential proxy + youtubei.js)
   if (RESIDENTIAL_PROXY_URL) {
     try {
       return await downloadWithProxy(videoId)
@@ -782,7 +789,7 @@ export async function downloadYouTubeAudio(videoId: string): Promise<AudioDownlo
     }
   }
 
-  // Method 4: Try youtubei.js direct (datacenter IP - usually blocked)
+  // Method 5: Try youtubei.js direct (datacenter IP - usually blocked)
   try {
     return await downloadWithYoutubei(videoId)
   } catch (err) {

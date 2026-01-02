@@ -67,7 +67,7 @@ export default function FetchPage() {
           id: data.id,
           videoId: data.videoId,
           title: data.title,
-          content: data.transcript,
+          content: data.content,
           source: data.source,
           status: 'success',
           createdAt: new Date().toISOString(),
