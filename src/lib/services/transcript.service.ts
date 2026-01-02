@@ -12,6 +12,7 @@
 import { extractVideoId } from '@/lib/utils/youtube-parser'
 import { formatTranscript, type TranscriptSegment } from '@/lib/utils/text-formatter'
 import { transcribeYouTubeVideo } from './groq.service'
+import { Innertube } from 'youtubei.js'
 
 // ============================================
 // CONFIGURATION
@@ -136,6 +137,16 @@ interface YouTubeTranscriptSegment {
   duration: number
 }
 
+// Singleton Innertube instance for transcript fallback
+let innertubeForCaptions: Innertube | null = null
+
+async function getInnertube(): Promise<Innertube> {
+  if (!innertubeForCaptions) {
+    innertubeForCaptions = await Innertube.create()
+  }
+  return innertubeForCaptions
+}
+
 /**
  * Fetch transcript using youtube-transcript library approach
  * This uses the YouTube innertube API to get captions
@@ -205,6 +216,42 @@ async function fetchYouTubeTranscript(
 
   if (segments.length === 0) {
     throw new Error('Caption track is empty')
+  }
+
+  return segments
+}
+
+/**
+ * Alternate transcript fetch using youtubei.js built-in transcript API
+ * This can succeed when the scraped timedtext URL is missing/blocked.
+ */
+async function fetchYouTubeTranscriptViaInnertube(
+  videoId: string,
+  lang?: string
+): Promise<YouTubeTranscriptSegment[]> {
+  const yt = await getInnertube()
+  const info = await yt.getInfo(videoId)
+
+  const transcript = await info.getTranscript(lang ? { lang } : undefined)
+
+  if (!transcript || !transcript.transcript?.content?.body?.initial_segments) {
+    throw new Error('No captions available via innertube')
+  }
+
+  const segments: YouTubeTranscriptSegment[] = transcript.transcript.content.body.initial_segments
+    .map((segment: { snippet?: { text?: string }; start_ms?: number; duration_ms?: number }) => {
+      const text = segment.snippet?.text?.trim()
+      if (!text) return null
+      return {
+        text,
+        start: (segment.start_ms || 0) / 1000,
+        duration: (segment.duration_ms || 0) / 1000,
+      }
+    })
+    .filter(Boolean) as YouTubeTranscriptSegment[]
+
+  if (segments.length === 0) {
+    throw new Error('Caption track is empty via innertube')
   }
 
   return segments
@@ -285,35 +332,55 @@ export async function fetchTranscript(
       language: options.preferredLanguage || 'en',
     }
   } catch (youtubeError) {
-    // If fallback is disabled, throw the error
-    if (!enableFallback) {
-      throw youtubeError
-    }
-
-    // Try Whisper fallback
+    // Try alternate caption fetch via youtubei.js before Whisper
     try {
-      const whisperResult = await transcribeYouTubeVideo(videoId)
+      const segments = await fetchYouTubeTranscriptViaInnertube(videoId, options.preferredLanguage)
 
-      const transcriptSegments: TranscriptSegment[] = whisperResult.segments?.map(seg => ({
+      const transcriptSegments: TranscriptSegment[] = segments.map(seg => ({
         text: seg.text,
         start: seg.start,
-        duration: seg.end - seg.start,
-      })) || [{ text: whisperResult.text }]
+        duration: seg.duration,
+      }))
 
       return {
         videoId,
         title,
         transcript: formatTranscript(transcriptSegments, includeTimestamps),
         segments: transcriptSegments,
-        source: 'whisper',
-        language: whisperResult.language,
-        duration: whisperResult.duration,
+        source: 'youtube',
+        language: options.preferredLanguage || 'en',
       }
-    } catch (whisperError) {
-      // Both methods failed
-      throw new Error(
-        `Failed to get transcript. YouTube error: ${youtubeError}. Whisper error: ${whisperError}`
-      )
+    } catch (altCaptionError) {
+      // If fallback is disabled, surface the original caption error
+      if (!enableFallback) {
+        throw youtubeError
+      }
+
+      // Try Whisper fallback
+      try {
+        const whisperResult = await transcribeYouTubeVideo(videoId)
+
+        const transcriptSegments: TranscriptSegment[] = whisperResult.segments?.map(seg => ({
+          text: seg.text,
+          start: seg.start,
+          duration: seg.end - seg.start,
+        })) || [{ text: whisperResult.text }]
+
+        return {
+          videoId,
+          title,
+          transcript: formatTranscript(transcriptSegments, includeTimestamps),
+          segments: transcriptSegments,
+          source: 'whisper',
+          language: whisperResult.language,
+          duration: whisperResult.duration,
+        }
+      } catch (whisperError) {
+        // Both caption methods and Whisper failed
+        throw new Error(
+          `Failed to get transcript. YouTube error: ${youtubeError}. Alternate captions error: ${altCaptionError}. Whisper error: ${whisperError}`
+        )
+      }
     }
   }
 }
