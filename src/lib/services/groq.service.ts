@@ -309,7 +309,7 @@ async function downloadWithAudioApi(videoId: string): Promise<AudioDownloadResul
     headers: {
       'Accept': 'audio/mpeg, */*',
     },
-    signal: AbortSignal.timeout(120000), // 2 minute timeout
+    signal: AbortSignal.timeout(240000), // 4 minute timeout for longer videos
   })
 
   console.log('[AudioAPI] Response status:', response.status)
@@ -715,7 +715,7 @@ async function downloadWithProxy(videoId: string): Promise<AudioDownloadResult> 
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': '*/*',
     },
-    signal: AbortSignal.timeout(120000), // 2 minute timeout
+    signal: AbortSignal.timeout(180000), // 3 minute timeout
   })
 
   console.log('[Proxy] Response status:', response.status)
