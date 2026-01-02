@@ -202,9 +202,84 @@ export async function generatePodcastFromContent(
     }
   }
 
-  // For full audio generation, return job ID for background processing
-  // The actual generation will happen in a background function
-  return mapJobToResponse(job)
+  // For full audio generation with ElevenLabs
+  try {
+    // First generate the script
+    const script = await generatePodcastScript(content.content, {
+      hostNames: options.hostNames,
+      hostRoles: options.hostRoles,
+      targetDuration: options.targetDuration,
+      tone: options.tone,
+      focusGuidance: options.focusGuidance,
+      includeIntro: options.includeIntro ?? true,
+      includeOutro: options.includeOutro ?? true,
+    })
+
+    const estimatedDuration = estimateTotalDuration(script.segments)
+
+    // Update job with script
+    await supabase
+      .from('podcast_jobs')
+      .update({
+        status: 'generating_audio',
+        progress: 30,
+        script,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', job.id)
+
+    // Get host names for voice mapping
+    const hostNames = options.hostNames || { host1: 'Alex', host2: 'Jamie' }
+
+    // Generate audio using ElevenLabs Studio
+    const audioResult = await generatePodcastAudio({
+      segments: script.segments,
+      voiceMap: {
+        [hostNames.host1]: options.voiceHost1!,
+        [hostNames.host2]: options.voiceHost2!,
+      },
+      userId,
+      jobId: job.id,
+      onProgress: async (stage, progress) => {
+        await supabase
+          .from('podcast_jobs')
+          .update({
+            status: stage as 'generating_audio' | 'stitching' | 'complete',
+            progress: 30 + Math.round(progress * 0.7), // 30-100%
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', job.id)
+      },
+    })
+
+    // Update job with completed audio
+    const { data: updatedJob } = await supabase
+      .from('podcast_jobs')
+      .update({
+        status: 'complete',
+        progress: 100,
+        audio_url: audioResult.audioUrl,
+        duration: audioResult.duration || estimatedDuration.seconds,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', job.id)
+      .select()
+      .single()
+
+    return mapJobToResponse(updatedJob || job)
+  } catch (error) {
+    // Update job with error
+    await supabase
+      .from('podcast_jobs')
+      .update({
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Audio generation failed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', job.id)
+
+    throw error
+  }
 }
 
 /**

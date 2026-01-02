@@ -114,6 +114,10 @@ function PodcastContent() {
   const [host2VoiceId, setHost2VoiceId] = useState<string | null>(null)
   const [loadingVoices, setLoadingVoices] = useState(false)
 
+  // Audio generation
+  const [generateAudio, setGenerateAudio] = useState(false)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false)
   const [podcastJobId, setPodcastJobId] = useState<string | null>(null)
@@ -214,6 +218,11 @@ function PodcastContent() {
       return
     }
 
+    if (generateAudio && (!host1VoiceId || !host2VoiceId)) {
+      toast.error('Please select voices for both hosts to generate audio')
+      return
+    }
+
     setIsGenerating(true)
     setPodcastScript(null)
 
@@ -234,7 +243,7 @@ function PodcastContent() {
             focusGuidance: focusGuidance || undefined,
             includeIntro,
             includeOutro,
-            ttsProvider: 'none',
+            ttsProvider: generateAudio ? 'elevenlabs' : 'none',
             voiceHost1: host1VoiceId || undefined,
             voiceHost2: host2VoiceId || undefined,
           }),
@@ -264,11 +273,16 @@ function PodcastContent() {
       }
 
       setPodcastJobId(data.job.id)
-      toast.success('Podcast script generated!')
+      toast.success(generateAudio ? 'Podcast generated with audio!' : 'Podcast script generated!')
 
       // Script is already in the response
       if (data.job.script) {
         setPodcastScript(data.job.script)
+      }
+
+      // Audio URL if generated
+      if (data.job.audioUrl) {
+        setAudioUrl(data.job.audioUrl)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed'
@@ -304,6 +318,7 @@ function PodcastContent() {
     setSelectedContentId(null)
     setPodcastScript(null)
     setPodcastJobId(null)
+    setAudioUrl(null)
   }
 
   // Show results if we have a script
@@ -354,6 +369,38 @@ function PodcastContent() {
               </button>
             </div>
           </div>
+
+          {/* Audio Player */}
+          {audioUrl && (
+            <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 rounded-xl p-6 border border-purple-200 dark:border-purple-800">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="p-3 bg-purple-600 rounded-full">
+                  <Play className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Your Podcast Audio</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Generated with ElevenLabs</p>
+                </div>
+              </div>
+              <audio
+                controls
+                src={audioUrl}
+                className="w-full"
+              >
+                Your browser does not support the audio element.
+              </audio>
+              <div className="mt-4 flex gap-2">
+                <a
+                  href={audioUrl}
+                  download="podcast.mp3"
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Download MP3
+                </a>
+              </div>
+            </div>
+          )}
 
           {/* Script Preview */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -755,6 +802,34 @@ function PodcastContent() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Audio Generation Toggle */}
+            <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="font-medium text-gray-900 dark:text-white">Generate Audio with ElevenLabs</span>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Create a full MP3 podcast using AI voices (requires voice selection above)
+                  </p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={generateAudio}
+                    onChange={(e) => setGenerateAudio(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className={`w-14 h-7 rounded-full transition-colors ${generateAudio ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${generateAudio ? 'translate-x-7' : ''}`} />
+                  </div>
+                </div>
+              </label>
+              {generateAudio && (!host1VoiceId || !host2VoiceId) && (
+                <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
+                  Please select voices for both hosts above to generate audio
+                </p>
+              )}
             </div>
 
             {/* Advanced Options */}
