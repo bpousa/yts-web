@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate content
-    const content = await generateFromTranscripts(user.id, {
+    const generatedContent = await generateFromTranscripts(user.id, {
       transcriptIds: validationResult.data.transcriptIds,
       format: validationResult.data.format,
       voice: validationResult.data.voice,
@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
       lengthConstraint: validationResult.data.lengthConstraint,
     })
 
-    const response = NextResponse.json({ content }, { status: 201 })
+    // Return flat response - frontend expects content as string, id at top level
+    const response = NextResponse.json({
+      id: generatedContent.id,
+      content: generatedContent.content,
+      title: generatedContent.title,
+      format: generatedContent.format,
+    }, { status: 201 })
     applyRateLimitHeaders(response.headers, rateLimitResult)
     return response
   } catch (error) {
