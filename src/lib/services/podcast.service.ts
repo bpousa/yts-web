@@ -498,6 +498,8 @@ export interface GenerateAudioOptions {
 
 /**
  * Generate audio for an existing podcast job
+ * Uses async approach: creates ElevenLabs project and returns immediately
+ * Client polls GET /api/generate/podcast/[id] to check status
  */
 export async function generateAudioForJob(
   userId: string,
@@ -534,43 +536,28 @@ export async function generateAudioForJob(
     [hostNames.host2]: options.voiceHost2,
   }
 
-  // Update job status
-  await supabase
-    .from('podcast_jobs')
-    .update({
-      status: 'generating_audio',
-      progress: 0,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', job.id)
-
   try {
-    // Generate audio
-    const audioResult = await generatePodcastAudio({
+    // Create ElevenLabs project (fast, ~2-3 seconds)
+    const { projectId } = await createPodcastProject({
+      name: `Podcast ${job.id}`,
       segments: job.script.segments,
       voiceMap,
-      userId,
-      jobId: job.id,
-      onProgress: async (stage, progress) => {
-        await supabase
-          .from('podcast_jobs')
-          .update({
-            status: stage as 'generating_audio' | 'stitching' | 'complete',
-            progress,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', job.id)
-      },
+      qualityPreset: 'high',
     })
 
-    // Update job with audio URL
+    // Update job with project ID and return immediately
+    // Client will poll GET /api/generate/podcast/[id] to check status
     const { data: updatedJob } = await supabase
       .from('podcast_jobs')
       .update({
-        status: 'complete',
-        progress: 100,
-        audio_url: audioResult.audioUrl,
-        duration: audioResult.duration,
+        status: 'generating_audio',
+        progress: 30,
+        options: {
+          ...job.options,
+          elevenlabsProjectId: projectId,
+          voiceHost1: options.voiceHost1,
+          voiceHost2: options.voiceHost2,
+        },
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id)
