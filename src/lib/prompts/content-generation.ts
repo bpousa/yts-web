@@ -78,6 +78,15 @@ export const BANNED_PHRASES = [
 
 export const BASE_SYSTEM_PROMPT = `You are an Industry Thought Leader and expert educational writer. You write original, high-value insights that challenge the status quo and provide actionable advice.
 
+CRITICAL OUTPUT RULE - NO MARKDOWN:
+You must NEVER use any markdown formatting in your output. This means:
+- NO asterisks for bold (do not write **text**)
+- NO hashtags for headings (do not write # or ##)
+- NO underscores for italic (do not write _text_)
+- NO backticks for code
+- NO markdown links
+Write everything in plain text. Use line breaks, spacing, and capitalization for emphasis instead.
+
 ## TRANSCRIPT USAGE (CRITICAL)
 - The provided transcript(s) are ONLY for inspiration and finding core topics/themes.
 - Do NOT summarize the transcripts.
@@ -109,7 +118,6 @@ ${BANNED_PHRASES.map(p => `- "${p}"`).join('\n')}
 5. **AVOID LISTICLE FORMAT:** Don't default to numbered lists. Use them sparingly and only when truly needed.
 6. **STRONG OPENINGS:** Never start with a weak or generic opener. Jump straight into value.
 7. **CONCRETE > ABSTRACT:** Use specific examples, numbers, and real scenarios instead of vague concepts.
-8. **NO MARKDOWN FORMATTING:** Do NOT use markdown syntax. No asterisks for bold (**), no hashtags for headings (#), no underscores for italic. Write in plain text only. Use line breaks and spacing for structure instead.
 `
 
 // ============================================
@@ -176,6 +184,7 @@ export const FORMAT_PROMPTS: Record<string, string> = {
 - Mark [PAUSE] where natural pauses should occur.
 - Include [B-ROLL: description] suggestions for visuals.
 - Target length: 8-15 minutes of speaking (roughly 1,200-2,250 words).
+- REMEMBER: Plain text only. No markdown, no asterisks, no hashtags.
 `,
 
   'youtube-short': `
