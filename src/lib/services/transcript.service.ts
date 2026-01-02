@@ -277,22 +277,53 @@ async function fetchVideoTitle(videoId: string): Promise<string> {
 
     const html = await response.text()
 
-    // Try to extract title from meta tag
-    const titleMatch = html.match(/<meta name="title" content="([^"]+)"/)
-    if (titleMatch) {
-      return titleMatch[1]
+    // Try multiple extraction methods
+
+    // Method 1: og:title (most reliable)
+    const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/)
+    if (ogMatch) {
+      return decodeHTMLEntities(ogMatch[1])
     }
 
-    // Fallback to og:title
-    const ogMatch = html.match(/<meta property="og:title" content="([^"]+)"/)
-    if (ogMatch) {
-      return ogMatch[1]
+    // Method 2: name="title" meta tag
+    const titleMatch = html.match(/<meta\s+name="title"\s+content="([^"]+)"/)
+    if (titleMatch) {
+      return decodeHTMLEntities(titleMatch[1])
+    }
+
+    // Method 3: <title> tag (usually has " - YouTube" suffix)
+    const htmlTitleMatch = html.match(/<title>([^<]+)<\/title>/)
+    if (htmlTitleMatch) {
+      let title = htmlTitleMatch[1]
+      // Remove " - YouTube" suffix if present
+      title = title.replace(/\s*-\s*YouTube\s*$/, '')
+      return decodeHTMLEntities(title)
+    }
+
+    // Method 4: JSON in page (videoDetails.title)
+    const jsonMatch = html.match(/"title"\s*:\s*"([^"]+)"/)
+    if (jsonMatch) {
+      return decodeHTMLEntities(jsonMatch[1])
     }
 
     return videoId
   } catch {
     return videoId
   }
+}
+
+/**
+ * Decode HTML entities in a string
+ */
+function decodeHTMLEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
 }
 
 // ============================================
