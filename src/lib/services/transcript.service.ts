@@ -232,20 +232,25 @@ async function fetchYouTubeTranscriptViaInnertube(
   const yt = await getInnertube()
   const info = await yt.getInfo(videoId)
 
-  const transcript = await info.getTranscript(lang ? { lang } : undefined)
+  // getTranscript() doesn't take arguments in current youtubei.js version
+  const transcript = await info.getTranscript()
 
   if (!transcript || !transcript.transcript?.content?.body?.initial_segments) {
     throw new Error('No captions available via innertube')
   }
 
   const segments: YouTubeTranscriptSegment[] = transcript.transcript.content.body.initial_segments
-    .map((segment: { snippet?: { text?: string }; start_ms?: number; duration_ms?: number }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((segment: any) => {
       const text = segment.snippet?.text?.trim()
       if (!text) return null
+      // start_ms and duration_ms can be strings or numbers depending on version
+      const startMs = typeof segment.start_ms === 'string' ? parseFloat(segment.start_ms) : (segment.start_ms || 0)
+      const durationMs = typeof segment.duration_ms === 'string' ? parseFloat(segment.duration_ms) : (segment.duration_ms || 0)
       return {
         text,
-        start: (segment.start_ms || 0) / 1000,
-        duration: (segment.duration_ms || 0) / 1000,
+        start: startMs / 1000,
+        duration: durationMs / 1000,
       }
     })
     .filter(Boolean) as YouTubeTranscriptSegment[]
