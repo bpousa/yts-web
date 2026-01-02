@@ -266,12 +266,9 @@ function PodcastContent() {
       setPodcastJobId(data.job.id)
       toast.success('Podcast script generated!')
 
-      // Fetch the script
-      const scriptResponse = await fetch(`/api/generate/podcast/${data.job.id}`)
-      const scriptData = await scriptResponse.json()
-
-      if (scriptData.script) {
-        setPodcastScript(scriptData.script)
+      // Script is already in the response
+      if (data.job.script) {
+        setPodcastScript(data.job.script)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed'
