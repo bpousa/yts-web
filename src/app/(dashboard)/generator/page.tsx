@@ -93,10 +93,10 @@ function GeneratorContent() {
 
         const data = await response.json()
 
-        if (response.ok && data.transcript?.id) {
-          fetchedIds.push(data.transcript.id)
+        if (response.ok && data.id) {
+          fetchedIds.push(data.id)
           setFetchingVideos(prev => prev.map((v, idx) =>
-            idx === i ? { ...v, status: 'success', title: data.transcript.video_title } : v
+            idx === i ? { ...v, status: 'success', title: data.title } : v
           ))
         } else {
           setFetchingVideos(prev => prev.map((v, idx) =>
@@ -157,10 +157,10 @@ function GeneratorContent() {
 
         const data = await response.json()
 
-        if (response.ok && data.transcript?.id) {
-          newFetchedIds.push(data.transcript.id)
+        if (response.ok && data.id) {
+          newFetchedIds.push(data.id)
           setFetchingVideos(prev => prev.map((v, i) =>
-            i === idx ? { ...v, status: 'success' as const, title: data.transcript.video_title } : v
+            i === idx ? { ...v, status: 'success' as const, title: data.title } : v
           ))
         } else {
           setFetchingVideos(prev => prev.map((v, i) =>
