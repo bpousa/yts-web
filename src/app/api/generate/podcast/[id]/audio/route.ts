@@ -20,6 +20,16 @@ type AnySupabase = SupabaseClient<any>
 const generateAudioSchema = z.object({
   voiceHost1: z.string().min(1, 'Voice for Host 1 is required'),
   voiceHost2: z.string().min(1, 'Voice for Host 2 is required'),
+  script: z.object({
+    title: z.string(),
+    description: z.string(),
+    segments: z.array(z.object({
+      speaker: z.string(),
+      text: z.string(),
+      emotion: z.string().optional(),
+    })),
+    keyTakeaways: z.array(z.string()),
+  }).optional(), // Optional - use if user edited the script
 })
 
 export async function POST(
@@ -56,13 +66,14 @@ export async function POST(
       )
     }
 
-    const { voiceHost1, voiceHost2 } = validationResult.data
+    const { voiceHost1, voiceHost2, script } = validationResult.data
 
     // Generate audio for the job
     const job = await generateAudioForJob(user.id, {
       jobId: id,
       voiceHost1,
       voiceHost2,
+      script, // Pass edited script if provided
     })
 
     const response = NextResponse.json({ job })

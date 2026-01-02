@@ -14,6 +14,9 @@ import {
   User,
   Clock,
   MessageSquare,
+  Edit3,
+  Check,
+  X,
 } from 'lucide-react'
 
 // Types
@@ -60,8 +63,9 @@ interface PodcastSegment {
 
 interface PodcastScript {
   title: string
+  description: string
   segments: PodcastSegment[]
-  keyTakeaways?: string[]
+  keyTakeaways: string[]
 }
 
 // Duration options
@@ -115,16 +119,20 @@ function PodcastContent() {
   const [loadingVoices, setLoadingVoices] = useState(false)
 
   // Audio generation
-  const [generateAudio, setGenerateAudio] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioProgress, setAudioProgress] = useState(0)
   const [isPolling, setIsPolling] = useState(false)
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false)
   const [podcastJobId, setPodcastJobId] = useState<string | null>(null)
   const [podcastScript, setPodcastScript] = useState<PodcastScript | null>(null)
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+
+  // Script editing state
+  const [editingSegmentIdx, setEditingSegmentIdx] = useState<number | null>(null)
+  const [editingText, setEditingText] = useState('')
 
   // Fetch user's generated contents and saved voices
   useEffect(() => {
@@ -249,19 +257,15 @@ function PodcastContent() {
       return
     }
 
-    if (generateAudio && (!host1VoiceId || !host2VoiceId)) {
-      toast.error('Please select voices for both hosts to generate audio')
-      return
-    }
-
     setIsGenerating(true)
     setPodcastScript(null)
+    setAudioUrl(null)
 
     try {
       let response: Response
 
       if (sourceMode === 'content') {
-        // Generate from existing content
+        // Generate script from existing content
         response = await fetch('/api/generate/podcast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -274,9 +278,7 @@ function PodcastContent() {
             focusGuidance: focusGuidance || undefined,
             includeIntro,
             includeOutro,
-            ttsProvider: generateAudio ? 'elevenlabs' : 'none',
-            voiceHost1: host1VoiceId || undefined,
-            voiceHost2: host2VoiceId || undefined,
+            ttsProvider: 'none', // Always script-only first
           }),
         })
       } else {
@@ -305,22 +307,10 @@ function PodcastContent() {
 
       setPodcastJobId(data.job.id)
 
-      // Script is already in the response
+      // Script is in the response
       if (data.job.script) {
         setPodcastScript(data.job.script)
-      }
-
-      // Check if audio is ready or still generating
-      if (data.job.audioUrl) {
-        setAudioUrl(data.job.audioUrl)
-        toast.success('Podcast generated with audio!')
-      } else if (generateAudio && data.job.status === 'generating_audio') {
-        // Start polling for audio completion
-        setIsPolling(true)
-        setAudioProgress(data.job.progress || 30)
-        toast.success('Script ready! Audio is being generated...')
-      } else {
-        toast.success('Podcast script generated!')
+        toast.success('Podcast script generated! Review and edit, then generate audio.')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed'
@@ -328,6 +318,76 @@ function PodcastContent() {
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  // Generate audio from approved script
+  const handleGenerateAudio = async () => {
+    if (!podcastJobId || !podcastScript) {
+      toast.error('No script to generate audio from')
+      return
+    }
+
+    if (!host1VoiceId || !host2VoiceId) {
+      toast.error('Please select voices for both hosts')
+      return
+    }
+
+    setIsGeneratingAudio(true)
+
+    try {
+      const response = await fetch(`/api/generate/podcast/${podcastJobId}/audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voiceHost1: host1VoiceId,
+          voiceHost2: host2VoiceId,
+          script: podcastScript, // Send the possibly edited script
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start audio generation')
+      }
+
+      // Start polling for completion
+      setIsPolling(true)
+      setAudioProgress(30)
+      toast.success('Audio generation started! This may take a few minutes...')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Audio generation failed'
+      toast.error(message)
+    } finally {
+      setIsGeneratingAudio(false)
+    }
+  }
+
+  // Edit segment handlers
+  const startEditingSegment = (idx: number) => {
+    if (podcastScript) {
+      setEditingSegmentIdx(idx)
+      setEditingText(podcastScript.segments[idx].text)
+    }
+  }
+
+  const saveSegmentEdit = () => {
+    if (podcastScript && editingSegmentIdx !== null) {
+      const newSegments = [...podcastScript.segments]
+      newSegments[editingSegmentIdx] = {
+        ...newSegments[editingSegmentIdx],
+        text: editingText,
+      }
+      setPodcastScript({ ...podcastScript, segments: newSegments })
+      setEditingSegmentIdx(null)
+      setEditingText('')
+      toast.success('Segment updated')
+    }
+  }
+
+  const cancelSegmentEdit = () => {
+    setEditingSegmentIdx(null)
+    setEditingText('')
   }
 
   const handleDownload = async (format: 'txt' | 'srt') => {
@@ -466,11 +526,16 @@ function PodcastContent() {
             </div>
           )}
 
-          {/* Script Preview */}
+          {/* Script Preview - Editable */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              {podcastScript.title}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {podcastScript.title}
+              </h3>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Click any segment to edit
+              </span>
+            </div>
 
             <div className="space-y-4 max-h-[500px] overflow-y-auto">
               {podcastScript.segments.map((segment, idx) => (
@@ -482,20 +547,60 @@ function PodcastContent() {
                       : 'bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <User className="w-4 h-4" />
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {segment.speaker}
-                    </span>
-                    {segment.emotion && (
-                      <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded-full text-gray-600 dark:text-gray-400">
-                        {segment.emotion}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {segment.speaker}
                       </span>
+                      {segment.emotion && (
+                        <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded-full text-gray-600 dark:text-gray-400">
+                          {segment.emotion}
+                        </span>
+                      )}
+                    </div>
+                    {editingSegmentIdx !== idx && (
+                      <button
+                        onClick={() => startEditingSegment(idx)}
+                        className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        title="Edit segment"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
-                  <p className="text-gray-700 dark:text-gray-300 text-sm">
-                    {segment.text}
-                  </p>
+
+                  {editingSegmentIdx === idx ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        className="w-full p-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        rows={4}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={saveSegmentEdit}
+                          className="flex items-center gap-1 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg"
+                        >
+                          <Check className="w-3 h-3" />
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelSegmentEdit}
+                          className="flex items-center gap-1 px-3 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg"
+                        >
+                          <X className="w-3 h-3" />
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-700 dark:text-gray-300 text-sm cursor-pointer hover:bg-white/50 dark:hover:bg-black/20 rounded p-1 -m-1" onClick={() => startEditingSegment(idx)}>
+                      {segment.text}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -520,6 +625,79 @@ function PodcastContent() {
               </div>
             )}
           </div>
+
+          {/* Generate Audio Section */}
+          {!audioUrl && !isPolling && (
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-6 border border-purple-200 dark:border-purple-800">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Generate Audio
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Happy with the script? Select voices and generate the audio.
+              </p>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {host1Name}&apos;s Voice
+                  </label>
+                  <select
+                    value={host1VoiceId || ''}
+                    onChange={(e) => setHost1VoiceId(e.target.value || null)}
+                    className="w-full p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+                  >
+                    <option value="">Select voice...</option>
+                    {savedVoices.map((voice) => (
+                      <option key={voice.voice_id} value={voice.voice_id}>
+                        {voice.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    {host2Name}&apos;s Voice
+                  </label>
+                  <select
+                    value={host2VoiceId || ''}
+                    onChange={(e) => setHost2VoiceId(e.target.value || null)}
+                    className="w-full p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+                  >
+                    <option value="">Select voice...</option>
+                    {savedVoices.map((voice) => (
+                      <option key={voice.voice_id} value={voice.voice_id}>
+                        {voice.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {savedVoices.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
+                  No saved voices yet. <a href="/settings" className="underline">Add voices in Settings</a>
+                </p>
+              )}
+
+              <button
+                onClick={handleGenerateAudio}
+                disabled={isGeneratingAudio || !host1VoiceId || !host2VoiceId}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
+              >
+                {isGeneratingAudio ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5" />
+                    Generate Audio with ElevenLabs
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         // Configuration View
@@ -800,21 +978,6 @@ function PodcastContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Voice (Optional)</label>
-                    <select
-                      value={host1VoiceId || ''}
-                      onChange={(e) => setHost1VoiceId(e.target.value || null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    >
-                      <option value="">Use Default</option>
-                      {savedVoices.map((voice) => (
-                        <option key={voice.id} value={voice.voice_id}>
-                          {voice.name}{voice.is_default_host1 ? ' (Default H1)' : ''}{voice.is_default_host2 ? ' (Default H2)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
                     <label className="block text-xs text-gray-500 mb-1">Role/Goal</label>
                     <textarea
                       value={host1Role}
@@ -840,21 +1003,6 @@ function PodcastContent() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Voice (Optional)</label>
-                    <select
-                      value={host2VoiceId || ''}
-                      onChange={(e) => setHost2VoiceId(e.target.value || null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    >
-                      <option value="">Use Default</option>
-                      {savedVoices.map((voice) => (
-                        <option key={voice.id} value={voice.voice_id}>
-                          {voice.name}{voice.is_default_host1 ? ' (Default H1)' : ''}{voice.is_default_host2 ? ' (Default H2)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
                     <label className="block text-xs text-gray-500 mb-1">Role/Goal</label>
                     <textarea
                       value={host2Role}
@@ -866,34 +1014,6 @@ function PodcastContent() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Audio Generation Toggle */}
-            <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <span className="font-medium text-gray-900 dark:text-white">Generate Audio with ElevenLabs</span>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Create a full MP3 podcast using AI voices (requires voice selection above)
-                  </p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={generateAudio}
-                    onChange={(e) => setGenerateAudio(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div className={`w-14 h-7 rounded-full transition-colors ${generateAudio ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                    <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${generateAudio ? 'translate-x-7' : ''}`} />
-                  </div>
-                </div>
-              </label>
-              {generateAudio && (!host1VoiceId || !host2VoiceId) && (
-                <p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
-                  Please select voices for both hosts above to generate audio
-                </p>
-              )}
             </div>
 
             {/* Advanced Options */}

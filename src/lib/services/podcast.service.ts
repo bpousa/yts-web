@@ -494,6 +494,7 @@ export interface GenerateAudioOptions {
   jobId: string
   voiceHost1: string
   voiceHost2: string
+  script?: PodcastScript // Optional edited script from user
 }
 
 /**
@@ -519,7 +520,10 @@ export async function generateAudioForJob(
     throw new Error('Podcast job not found')
   }
 
-  if (!job.script || !job.script.segments) {
+  // Use provided script (if user edited it) or fall back to job's script
+  const scriptToUse = options.script || job.script
+
+  if (!scriptToUse || !scriptToUse.segments) {
     throw new Error('Job has no script to generate audio from')
   }
 
@@ -537,10 +541,21 @@ export async function generateAudioForJob(
   }
 
   try {
+    // If user provided an edited script, update the job first
+    if (options.script) {
+      await supabase
+        .from('podcast_jobs')
+        .update({
+          script: options.script,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+    }
+
     // Create ElevenLabs project (fast, ~2-3 seconds)
     const { projectId } = await createPodcastProject({
       name: `Podcast ${job.id}`,
-      segments: job.script.segments,
+      segments: scriptToUse.segments,
       voiceMap,
       qualityPreset: 'high',
     })
