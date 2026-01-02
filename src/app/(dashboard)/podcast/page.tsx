@@ -117,6 +117,8 @@ function PodcastContent() {
   // Audio generation
   const [generateAudio, setGenerateAudio] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioProgress, setAudioProgress] = useState(0)
+  const [isPolling, setIsPolling] = useState(false)
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false)
@@ -137,6 +139,35 @@ function PodcastContent() {
       setSelectedContentId(contentIdFromUrl)
     }
   }, [contentIdFromUrl])
+
+  // Poll for audio generation status
+  useEffect(() => {
+    if (!podcastJobId || !isPolling) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/generate/podcast/${podcastJobId}`)
+        const data = await response.json()
+
+        if (data.job) {
+          setAudioProgress(data.job.progress || 0)
+
+          if (data.job.status === 'complete' && data.job.audioUrl) {
+            setAudioUrl(data.job.audioUrl)
+            setIsPolling(false)
+            toast.success('Podcast audio ready!')
+          } else if (data.job.status === 'failed') {
+            setIsPolling(false)
+            toast.error(data.job.error || 'Audio generation failed')
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+      }
+    }, 3000) // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [podcastJobId, isPolling])
 
   const fetchSavedVoices = async () => {
     setLoadingVoices(true)
@@ -273,16 +304,23 @@ function PodcastContent() {
       }
 
       setPodcastJobId(data.job.id)
-      toast.success(generateAudio ? 'Podcast generated with audio!' : 'Podcast script generated!')
 
       // Script is already in the response
       if (data.job.script) {
         setPodcastScript(data.job.script)
       }
 
-      // Audio URL if generated
+      // Check if audio is ready or still generating
       if (data.job.audioUrl) {
         setAudioUrl(data.job.audioUrl)
+        toast.success('Podcast generated with audio!')
+      } else if (generateAudio && data.job.status === 'generating_audio') {
+        // Start polling for audio completion
+        setIsPolling(true)
+        setAudioProgress(data.job.progress || 30)
+        toast.success('Script ready! Audio is being generated...')
+      } else {
+        toast.success('Podcast script generated!')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed'
@@ -319,6 +357,8 @@ function PodcastContent() {
     setPodcastScript(null)
     setPodcastJobId(null)
     setAudioUrl(null)
+    setIsPolling(false)
+    setAudioProgress(0)
   }
 
   // Show results if we have a script
@@ -369,6 +409,30 @@ function PodcastContent() {
               </button>
             </div>
           </div>
+
+          {/* Audio Generation Progress */}
+          {isPolling && !audioUrl && (
+            <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 rounded-xl p-6 border border-purple-200 dark:border-purple-800">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="p-3 bg-purple-600 rounded-full animate-pulse">
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Generating Audio...</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">ElevenLabs is creating your podcast</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div
+                  className="bg-purple-600 h-3 rounded-full transition-all duration-500"
+                  style={{ width: `${audioProgress}%` }}
+                />
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
+                {audioProgress}% complete - This may take a few minutes
+              </p>
+            </div>
+          )}
 
           {/* Audio Player */}
           {audioUrl && (

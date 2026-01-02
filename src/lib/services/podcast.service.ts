@@ -13,7 +13,8 @@ import {
   type PodcastScriptOptions,
 } from '@/lib/prompts/podcast-generation'
 import { createClient } from '@/lib/supabase/server'
-import { generatePodcastAudio } from './audio.service'
+import { createPodcastProject, getPodcastProjectStatus, downloadPodcastAudio } from './tts.service'
+import { uploadAudio } from './tts.service'
 
 // Type workaround for tables not yet in generated types
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -202,9 +203,10 @@ export async function generatePodcastFromContent(
     }
   }
 
-  // For full audio generation with ElevenLabs
+  // For full audio generation with ElevenLabs - async approach
+  // We create the project and return immediately, client polls for completion
   try {
-    // First generate the script
+    // First generate the script (this is fast, ~5-10 seconds)
     const script = await generatePodcastScript(content.content, {
       hostNames: options.hostNames,
       hostRoles: options.hostRoles,
@@ -217,49 +219,35 @@ export async function generatePodcastFromContent(
 
     const estimatedDuration = estimateTotalDuration(script.segments)
 
-    // Update job with script
-    await supabase
-      .from('podcast_jobs')
-      .update({
-        status: 'generating_audio',
-        progress: 30,
-        script,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', job.id)
-
     // Get host names for voice mapping
     const hostNames = options.hostNames || { host1: 'Alex', host2: 'Jamie' }
 
-    // Generate audio using ElevenLabs Studio
-    const audioResult = await generatePodcastAudio({
+    // Create the ElevenLabs project (fast, ~2-3 seconds)
+    const { projectId } = await createPodcastProject({
+      name: `Podcast ${job.id}`,
       segments: script.segments,
       voiceMap: {
         [hostNames.host1]: options.voiceHost1!,
         [hostNames.host2]: options.voiceHost2!,
       },
-      userId,
-      jobId: job.id,
-      onProgress: async (stage, progress) => {
-        await supabase
-          .from('podcast_jobs')
-          .update({
-            status: stage as 'generating_audio' | 'stitching' | 'complete',
-            progress: 30 + Math.round(progress * 0.7), // 30-100%
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', job.id)
-      },
+      qualityPreset: 'high',
     })
 
-    // Update job with completed audio
+    // Update job with script and project ID, return immediately
+    // Client will poll GET /api/generate/podcast/[id] to check status
     const { data: updatedJob } = await supabase
       .from('podcast_jobs')
       .update({
-        status: 'complete',
-        progress: 100,
-        audio_url: audioResult.audioUrl,
-        duration: audioResult.duration || estimatedDuration.seconds,
+        status: 'generating_audio',
+        progress: 30,
+        script,
+        duration: estimatedDuration.seconds,
+        options: {
+          ...job.options,
+          elevenlabsProjectId: projectId,
+          voiceHost1: options.voiceHost1,
+          voiceHost2: options.voiceHost2,
+        },
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id)
@@ -284,6 +272,7 @@ export async function generatePodcastFromContent(
 
 /**
  * Get podcast job status
+ * If audio is being generated, check ElevenLabs status and finalize if ready
  */
 export async function getPodcastJob(
   userId: string,
@@ -300,6 +289,57 @@ export async function getPodcastJob(
 
   if (error || !job) {
     return null
+  }
+
+  // If audio is being generated, check ElevenLabs status
+  if (job.status === 'generating_audio' && job.options?.elevenlabsProjectId) {
+    try {
+      const projectId = job.options.elevenlabsProjectId
+      const status = await getPodcastProjectStatus(projectId)
+
+      if (status.canBeDownloaded) {
+        // Audio is ready! Download and upload to Supabase
+        const audioBuffer = await downloadPodcastAudio(projectId)
+        const filename = `podcast_${jobId}_${Date.now()}.mp3`
+        const audioUrl = await uploadAudio(audioBuffer, userId, filename)
+
+        // Estimate duration based on buffer size (128kbps MP3)
+        const estimatedDuration = Math.round((audioBuffer.length * 8) / (128 * 1000))
+
+        // Update job with completed audio
+        const { data: updatedJob } = await supabase
+          .from('podcast_jobs')
+          .update({
+            status: 'complete',
+            progress: 100,
+            audio_url: audioUrl,
+            duration: estimatedDuration || job.duration,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', jobId)
+          .select()
+          .single()
+
+        return mapJobToResponse(updatedJob || job)
+      } else if (status.state === 'converting' || status.state === 'in_queue') {
+        // Still processing, update progress
+        const progress = Math.round((status.progress || 0) * 60) + 30 // 30-90%
+        if (progress > job.progress) {
+          await supabase
+            .from('podcast_jobs')
+            .update({
+              progress,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', jobId)
+
+          job.progress = progress
+        }
+      }
+    } catch (err) {
+      console.error('Error checking ElevenLabs status:', err)
+      // Don't fail the request, just return current job status
+    }
   }
 
   return mapJobToResponse(job)
