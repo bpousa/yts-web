@@ -224,8 +224,8 @@ function GeneratorContent() {
       toast.success('Content generated successfully!')
 
       // Generate image if requested
-      if (wizard.data.generateImage) {
-        handleGenerateImage(data.content)
+      if (wizard.data.generateImage && data.id) {
+        handleGenerateImage(data.id)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed'
@@ -235,7 +235,7 @@ function GeneratorContent() {
     }
   }
 
-  const handleGenerateImage = async (content: string) => {
+  const handleGenerateImage = async (contentId: string) => {
     setIsGeneratingImage(true)
 
     try {
@@ -243,9 +243,10 @@ function GeneratorContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content,
-          style: wizard.data.imageStyle,
-          mood: wizard.data.imageMood,
+          contentId,
+          style: wizard.data.imageStyle || 'photorealistic',
+          mood: wizard.data.imageMood || 'professional',
+          aspectRatio: '16:9',
           customPrompt: wizard.data.customImagePrompt || undefined,
         }),
       })

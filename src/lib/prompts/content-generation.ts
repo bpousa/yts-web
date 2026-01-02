@@ -109,6 +109,7 @@ ${BANNED_PHRASES.map(p => `- "${p}"`).join('\n')}
 5. **AVOID LISTICLE FORMAT:** Don't default to numbered lists. Use them sparingly and only when truly needed.
 6. **STRONG OPENINGS:** Never start with a weak or generic opener. Jump straight into value.
 7. **CONCRETE > ABSTRACT:** Use specific examples, numbers, and real scenarios instead of vague concepts.
+8. **NO MARKDOWN FORMATTING:** Do NOT use markdown syntax. No asterisks for bold (**), no hashtags for headings (#), no underscores for italic. Write in plain text only. Use line breaks and spacing for structure instead.
 `
 
 // ============================================
@@ -139,8 +140,8 @@ export const FORMAT_PROMPTS: Record<string, string> = {
   'blog-short': `
 ## SHORT BLOG POST REQUIREMENTS
 - Target length: 600-900 words.
-- Include a compelling headline (H1).
-- Use 2-3 subheadings (H2) to break up content.
+- Start with a compelling headline on its own line.
+- Use 2-3 clear section breaks with descriptive headers (plain text, no markdown).
 - Opening paragraph should hook the reader immediately.
 - Include at least one concrete example or case study.
 - End with a clear takeaway or next step.
@@ -149,8 +150,8 @@ export const FORMAT_PROMPTS: Record<string, string> = {
   'blog-long': `
 ## LONG-FORM BLOG POST REQUIREMENTS
 - Target length: 1,500-2,500 words.
-- Include a compelling headline (H1).
-- Use 4-6 subheadings (H2/H3) for structure.
+- Start with a compelling headline on its own line.
+- Use 4-6 section headers (plain text, no markdown) for structure.
 - Include an introduction that previews the value.
 - Provide multiple examples, data points, or case studies.
 - Include actionable tips or frameworks.
