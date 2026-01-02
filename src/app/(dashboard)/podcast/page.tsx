@@ -126,6 +126,14 @@ function PodcastContent() {
     fetchSavedVoices()
   }, [])
 
+  // Auto-select content mode when contentId is in URL
+  useEffect(() => {
+    if (contentIdFromUrl) {
+      setSourceMode('content')
+      setSelectedContentId(contentIdFromUrl)
+    }
+  }, [contentIdFromUrl])
+
   const fetchSavedVoices = async () => {
     setLoadingVoices(true)
     try {
@@ -151,7 +159,7 @@ function PodcastContent() {
       // Fetch recent generated content
       const response = await fetch('/api/generate?limit=20')
       const data = await response.json()
-      setGeneratedContents(data.contents || [])
+      setGeneratedContents(data.content || [])
     } catch (error) {
       console.error('Failed to fetch contents:', error)
     } finally {

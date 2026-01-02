@@ -263,47 +263,46 @@ async function fetchYouTubeTranscriptViaInnertube(
 }
 
 /**
- * Get video title from YouTube
+ * Get video title from YouTube using oembed API (most reliable)
  */
 async function fetchVideoTitle(videoId: string): Promise<string> {
   try {
+    // Method 1: Use oembed API (most reliable, no scraping needed)
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+    const oembedResponse = await fetch(oembedUrl, {
+      headers: { 'User-Agent': getRandomUserAgent() },
+    })
+
+    if (oembedResponse.ok) {
+      const data = await oembedResponse.json()
+      if (data.title) {
+        return data.title
+      }
+    }
+
+    // Method 2: Fallback to scraping if oembed fails
     const response = await fetchWithRetry(
       `https://www.youtube.com/watch?v=${videoId}`,
       {},
-      1 // Only 1 retry for title - not critical
+      1
     )
 
     if (!response.ok) return videoId
 
     const html = await response.text()
 
-    // Try multiple extraction methods
-
-    // Method 1: og:title (most reliable)
+    // Try og:title
     const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/)
     if (ogMatch) {
       return decodeHTMLEntities(ogMatch[1])
     }
 
-    // Method 2: name="title" meta tag
-    const titleMatch = html.match(/<meta\s+name="title"\s+content="([^"]+)"/)
-    if (titleMatch) {
-      return decodeHTMLEntities(titleMatch[1])
-    }
-
-    // Method 3: <title> tag (usually has " - YouTube" suffix)
+    // Try <title> tag
     const htmlTitleMatch = html.match(/<title>([^<]+)<\/title>/)
     if (htmlTitleMatch) {
       let title = htmlTitleMatch[1]
-      // Remove " - YouTube" suffix if present
       title = title.replace(/\s*-\s*YouTube\s*$/, '')
       return decodeHTMLEntities(title)
-    }
-
-    // Method 4: JSON in page (videoDetails.title)
-    const jsonMatch = html.match(/"title"\s*:\s*"([^"]+)"/)
-    if (jsonMatch) {
-      return decodeHTMLEntities(jsonMatch[1])
     }
 
     return videoId
