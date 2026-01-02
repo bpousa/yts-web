@@ -134,10 +134,21 @@ function PodcastContent() {
   const [editingSegmentIdx, setEditingSegmentIdx] = useState<number | null>(null)
   const [editingText, setEditingText] = useState('')
 
-  // Fetch user's generated contents and saved voices
+  // Previous podcasts
+  const [previousPodcasts, setPreviousPodcasts] = useState<Array<{
+    id: string
+    status: string
+    script?: PodcastScript
+    audioUrl?: string
+    createdAt: string
+  }>>([])
+  const [loadingPreviousPodcasts, setLoadingPreviousPodcasts] = useState(true)
+
+  // Fetch user's generated contents, saved voices, and previous podcasts
   useEffect(() => {
     fetchGeneratedContents()
     fetchSavedVoices()
+    fetchPreviousPodcasts()
   }, [])
 
   // Auto-select content mode when contentId is in URL
@@ -187,6 +198,29 @@ function PodcastContent() {
       console.error('Failed to fetch voices:', error)
     } finally {
       setLoadingVoices(false)
+    }
+  }
+
+  const fetchPreviousPodcasts = async () => {
+    setLoadingPreviousPodcasts(true)
+    try {
+      const response = await fetch('/api/generate/podcast?limit=10')
+      const data = await response.json()
+      setPreviousPodcasts(data.jobs || [])
+    } catch (error) {
+      console.error('Failed to fetch previous podcasts:', error)
+    } finally {
+      setLoadingPreviousPodcasts(false)
+    }
+  }
+
+  const loadPreviousPodcast = (podcast: typeof previousPodcasts[0]) => {
+    setPodcastJobId(podcast.id)
+    if (podcast.script) {
+      setPodcastScript(podcast.script)
+    }
+    if (podcast.audioUrl) {
+      setAudioUrl(podcast.audioUrl)
     }
   }
 
@@ -702,10 +736,54 @@ function PodcastContent() {
       ) : (
         // Configuration View
         <div className="space-y-6">
+          {/* Previous Podcasts */}
+          {previousPodcasts.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Recent Podcasts
+              </h2>
+              <div className="space-y-3 max-h-[200px] overflow-y-auto">
+                {previousPodcasts.map((podcast) => (
+                  <div
+                    key={podcast.id}
+                    onClick={() => loadPreviousPodcast(podcast)}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {podcast.audioUrl ? (
+                        <Play className="w-5 h-5 text-purple-600" />
+                      ) : (
+                        <FileText className="w-5 h-5 text-gray-400" />
+                      )}
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">
+                          {podcast.script?.title || 'Untitled Podcast'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(podcast.createdAt).toLocaleDateString()} •
+                          {podcast.audioUrl ? ' Audio ready' : podcast.status === 'complete' ? ' Script only' : ` ${podcast.status}`}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      podcast.audioUrl
+                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                        : podcast.status === 'complete'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
+                    }`}>
+                      {podcast.audioUrl ? 'Audio' : podcast.status === 'complete' ? 'Script' : podcast.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Source Selection */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Select Source
+              Create New Podcast
             </h2>
 
             {/* Tabs */}
