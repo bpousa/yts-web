@@ -3,7 +3,11 @@
  * Generates podcast audio using Railway TTS service
  */
 
+import { SupabaseClient } from '@supabase/supabase-js'
 import { uploadAudio } from './tts.service'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabase = SupabaseClient<any>
 
 const YTS_AUDIO_API_URL = process.env.YTS_AUDIO_API_URL?.trim() || 'https://yts-audio-api-production.up.railway.app'
 
@@ -17,6 +21,7 @@ export interface GeneratePodcastAudioOptions {
   userId: string
   jobId: string
   projectName?: string
+  serviceClient?: AnySupabase // Service client for bypassing RLS
   onProgress?: (stage: string, progress: number) => Promise<void>
 }
 
@@ -36,7 +41,7 @@ export interface PodcastAudioResult {
 export async function generatePodcastAudio(
   options: GeneratePodcastAudioOptions
 ): Promise<PodcastAudioResult> {
-  const { segments, voiceMap, userId, jobId, onProgress } = options
+  const { segments, voiceMap, userId, jobId, serviceClient, onProgress } = options
 
   // Validate voice map
   const speakers = [...new Set(segments.map(s => s.speaker))]
@@ -90,9 +95,9 @@ export async function generatePodcastAudio(
       await onProgress('uploading', 95)
     }
 
-    // Upload to Supabase storage
+    // Upload to Supabase storage (use service client to bypass RLS)
     const filename = `podcast_${jobId}_${Date.now()}.mp3`
-    const audioUrl = await uploadAudio(audioBuffer, userId, filename)
+    const audioUrl = await uploadAudio(audioBuffer, userId, filename, serviceClient)
 
     if (onProgress) {
       await onProgress('complete', 100)

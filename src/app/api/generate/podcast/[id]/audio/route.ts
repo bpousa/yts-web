@@ -162,6 +162,7 @@ export async function POST(
         voiceMap,
         userId: user.id,
         jobId,
+        serviceClient: serviceSupabase, // Pass service client for storage upload
         onProgress: async (stage, progress) => {
           console.log('Progress:', stage, progress)
           await serviceSupabase

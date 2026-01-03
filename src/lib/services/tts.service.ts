@@ -356,15 +356,20 @@ export function concatenateAudioSegments(
 
 /**
  * Upload audio to Supabase Storage
+ * Uses service client to bypass RLS
  */
 export async function uploadAudio(
   audioBuffer: Buffer,
   userId: string,
-  filename: string
+  filename: string,
+  serviceClient?: AnySupabase
 ): Promise<string> {
-  const supabase = await createClient() as AnySupabase
+  // Use provided service client or fall back to regular client
+  const supabase = serviceClient || await createClient() as AnySupabase
 
   const path = `podcasts/${userId}/${filename}`
+
+  console.log(`[Upload] Uploading audio: ${path}, size=${audioBuffer.length}`)
 
   const { error } = await supabase.storage
     .from('audio')
@@ -374,10 +379,12 @@ export async function uploadAudio(
     })
 
   if (error) {
+    console.error(`[Upload] Failed:`, error)
     throw new Error(`Failed to upload audio: ${error.message}`)
   }
 
   const { data: urlData } = supabase.storage.from('audio').getPublicUrl(path)
+  console.log(`[Upload] Success: ${urlData.publicUrl}`)
 
   return urlData.publicUrl
 }
