@@ -227,12 +227,10 @@ export async function POST(
     console.error('POST /api/generate/podcast/[id]/audio error:', error)
 
     if (error instanceof Error) {
-      if (error.message.includes('not found')) {
-        return NextResponse.json({ error: 'Podcast job not found' }, { status: 404 })
-      }
       if (error.message.includes('already in progress')) {
         return NextResponse.json({ error: error.message }, { status: 409 })
       }
+      // Return actual error message for debugging
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
