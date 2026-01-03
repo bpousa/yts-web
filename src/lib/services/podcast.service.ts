@@ -383,6 +383,7 @@ export interface GenerateAudioOptions {
   voiceHost1: string
   voiceHost2: string
   script?: PodcastScript // Optional edited script from user
+  supabase?: AnySupabase // Pass client from route to maintain auth context
 }
 
 /**
@@ -394,7 +395,8 @@ export async function generateAudioForJob(
   userId: string,
   options: GenerateAudioOptions
 ): Promise<PodcastJob> {
-  const supabase = await createClient() as AnySupabase
+  // Use passed client to maintain auth context, or create new one
+  const supabase = options.supabase || await createClient() as AnySupabase
 
   // Get the job
   const { data: job, error: jobError } = await supabase
@@ -405,7 +407,13 @@ export async function generateAudioForJob(
     .single()
 
   if (jobError || !job) {
-    throw new Error('Podcast job not found')
+    console.error('Podcast job not found:', {
+      jobId: options.jobId,
+      userId,
+      error: jobError?.message,
+      code: jobError?.code,
+    })
+    throw new Error(`Podcast job not found: ${jobError?.message || 'no job returned'}`)
   }
 
   // Use provided script (if user edited it) or fall back to job's script

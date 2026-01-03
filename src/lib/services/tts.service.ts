@@ -186,37 +186,63 @@ async function synthesizeWithElevenLabs(
   voiceId: string,
   options: Partial<TTSOptions> = {}
 ): Promise<TTSResult> {
-  const apiKey = process.env.ELEVENLABS_API_KEY
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim()
 
   if (!apiKey) {
     throw new Error('ElevenLabs API key not configured')
   }
 
-  const response = await fetch(`${ELEVENLABS_TTS_ENDPOINT}/${voiceId}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'xi-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      text,
-      model_id: 'eleven_monolingual_v1',
-      voice_settings: {
-        stability: options.speakingRate || 0.5,
-        similarity_boost: 0.75,
-        style: 0.5,
-        use_speaker_boost: true,
+  console.log(`[ElevenLabs] Starting TTS for voiceId=${voiceId}, textLen=${text.length}`)
+  const startTime = Date.now()
+
+  // Add 30-second timeout to prevent hanging
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    console.error(`[ElevenLabs] Request timed out after 30s`)
+    controller.abort()
+  }, 30000)
+
+  let response: Response
+  try {
+    response = await fetch(`${ELEVENLABS_TTS_ENDPOINT}/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey,
       },
-    }),
-  })
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_monolingual_v1',
+        voice_settings: {
+          stability: options.speakingRate || 0.5,
+          similarity_boost: 0.75,
+          style: 0.5,
+          use_speaker_boost: true,
+        },
+      }),
+      signal: controller.signal,
+    })
+  } catch (fetchError) {
+    clearTimeout(timeoutId)
+    if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+      throw new Error('ElevenLabs API request timed out after 30 seconds')
+    }
+    throw fetchError
+  }
+  clearTimeout(timeoutId)
+
+  console.log(`[ElevenLabs] Response status=${response.status} in ${Date.now() - startTime}ms`)
 
   if (!response.ok) {
     const error = await response.text()
+    console.error(`[ElevenLabs] Error: ${error}`)
     throw new Error(`ElevenLabs error: ${error}`)
   }
 
   const audioBuffer = await response.arrayBuffer()
   const audioContent = Buffer.from(audioBuffer)
+
+  console.log(`[ElevenLabs] Got audio buffer size=${audioContent.length}`)
 
   // Estimate duration
   const words = text.split(/\s+/).length

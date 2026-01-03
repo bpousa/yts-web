@@ -1,9 +1,11 @@
 /**
  * Audio Processing Service
- * Generates podcast audio using segment-by-segment TTS and ffmpeg concatenation
+ * Generates podcast audio using Railway TTS service
  */
 
-import { textToSpeech, uploadAudio, type TTSResult } from './tts.service'
+import { uploadAudio } from './tts.service'
+
+const YTS_AUDIO_API_URL = process.env.YTS_AUDIO_API_URL?.trim() || 'https://yts-audio-api-production.up.railway.app'
 
 // ============================================
 // TYPES
@@ -29,7 +31,7 @@ export interface PodcastAudioResult {
 
 /**
  * Generate full podcast audio from script segments
- * Uses standard ElevenLabs TTS API for each segment, then concatenates
+ * Uses Railway TTS service to avoid Vercel serverless timeout issues
  */
 export async function generatePodcastAudio(
   options: GeneratePodcastAudioOptions
@@ -48,82 +50,61 @@ export async function generatePodcastAudio(
     await onProgress('generating_audio', 5)
   }
 
-  // Generate audio for each segment
-  const audioSegments: Array<{ buffer: Buffer; duration: number }> = []
-  const totalSegments = segments.length
+  console.log(`[Audio] Starting batch TTS via Railway: ${segments.length} segments`)
+  console.log(`[Audio] Railway URL: ${YTS_AUDIO_API_URL}`)
+  console.log(`[Audio] Voice map:`, voiceMap)
 
-  for (let i = 0; i < totalSegments; i++) {
-    const segment = segments[i]
-    const voiceId = voiceMap[segment.speaker]
+  const startTime = Date.now()
 
-    try {
-      const result: TTSResult = await textToSpeech(segment.text, {
-        provider: 'elevenlabs',
-        voiceId,
-      })
+  try {
+    // Call Railway TTS batch endpoint
+    const response = await fetch(`${YTS_AUDIO_API_URL}/tts/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        segments: segments.map(s => ({ speaker: s.speaker, text: s.text })),
+        voiceMap,
+      }),
+    })
 
-      audioSegments.push({
-        buffer: result.audioContent,
-        duration: result.duration,
-      })
-
-      // Update progress (5-80%)
-      if (onProgress) {
-        const progress = 5 + Math.round((i + 1) / totalSegments * 75)
-        await onProgress('generating_audio', progress)
-      }
-
-      // Small delay between API calls to avoid rate limiting
-      if (i < totalSegments - 1) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-    } catch (error) {
-      console.error(`Error generating segment ${i}:`, error)
-      throw new Error(`Failed to generate audio for segment ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }))
+      console.error(`[Audio] Railway TTS failed: ${response.status}`, errorData)
+      throw new Error(`Railway TTS failed: ${errorData.error || response.statusText}`)
     }
-  }
 
-  if (onProgress) {
-    await onProgress('stitching', 85)
-  }
+    const audioBuffer = Buffer.from(await response.arrayBuffer())
+    console.log(`[Audio] Railway TTS complete in ${Date.now() - startTime}ms, size=${audioBuffer.length}`)
 
-  // Concatenate all audio segments
-  const combinedBuffer = concatenateMP3Buffers(audioSegments.map(s => s.buffer))
-  const totalDuration = audioSegments.reduce((sum, s) => sum + s.duration, 0)
+    if (onProgress) {
+      await onProgress('stitching', 85)
+    }
 
-  if (onProgress) {
-    await onProgress('uploading', 95)
-  }
+    // Estimate duration (rough: ~150 words per minute, average 5 chars per word)
+    const totalChars = segments.reduce((sum, s) => sum + s.text.length, 0)
+    const estimatedDuration = Math.round((totalChars / 5) / 150 * 60)
 
-  // Upload to Supabase storage
-  const filename = `podcast_${jobId}_${Date.now()}.mp3`
-  const audioUrl = await uploadAudio(combinedBuffer, userId, filename)
+    if (onProgress) {
+      await onProgress('uploading', 95)
+    }
 
-  if (onProgress) {
-    await onProgress('complete', 100)
-  }
+    // Upload to Supabase storage
+    const filename = `podcast_${jobId}_${Date.now()}.mp3`
+    const audioUrl = await uploadAudio(audioBuffer, userId, filename)
 
-  return {
-    audioUrl,
-    duration: totalDuration,
+    if (onProgress) {
+      await onProgress('complete', 100)
+    }
+
+    return {
+      audioUrl,
+      duration: estimatedDuration,
+    }
+  } catch (error) {
+    console.error(`[Audio] Error generating audio:`, error)
+    throw error
   }
 }
 
-/**
- * Concatenate MP3 buffers
- * For MP3, simple buffer concatenation actually works reasonably well
- * since MP3 is a streaming format with independent frames
- */
-function concatenateMP3Buffers(buffers: Buffer[]): Buffer {
-  if (buffers.length === 0) {
-    throw new Error('No audio buffers to concatenate')
-  }
-
-  if (buffers.length === 1) {
-    return buffers[0]
-  }
-
-  // Simple concatenation works for MP3 because it's frame-based
-  // Each MP3 frame is independent and can be decoded on its own
-  return Buffer.concat(buffers)
-}
