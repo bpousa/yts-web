@@ -6,11 +6,15 @@ import { Search, Filter, Plus, Loader2, ExternalLink, Eye, Calendar } from 'luci
 import { SkeletonVideoResult } from '@/components/ui/Skeleton'
 
 interface VideoResult {
-  id: string
+  videoId: string
   title: string
   channelTitle: string
   description: string
-  thumbnailUrl: string
+  thumbnails: {
+    default: string
+    medium: string
+    high: string
+  }
   publishedAt: string
   viewCount?: string
   duration?: string
@@ -295,19 +299,19 @@ export default function SearchPage() {
             </p>
             {results.map((video) => (
               <div
-                key={video.id}
-                onClick={() => toggleVideoSelection(video.id)}
+                key={video.videoId}
+                onClick={() => toggleVideoSelection(video.videoId)}
                 className={`flex gap-4 p-4 rounded-lg cursor-pointer transition-colors ${
-                  selectedVideos.includes(video.id)
+                  selectedVideos.includes(video.videoId)
                     ? 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-500'
                     : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                 }`}
               >
                 {/* Thumbnail */}
                 <div className="w-40 h-24 bg-gray-200 dark:bg-gray-600 rounded-lg flex-shrink-0 overflow-hidden">
-                  {video.thumbnailUrl ? (
+                  {video.thumbnails?.medium ? (
                     <img
-                      src={video.thumbnailUrl}
+                      src={video.thumbnails.medium}
                       alt={video.title}
                       className="w-full h-full object-cover"
                     />
@@ -347,12 +351,12 @@ export default function SearchPage() {
                 <div className="flex flex-col items-end gap-2">
                   <input
                     type="checkbox"
-                    checked={selectedVideos.includes(video.id)}
+                    checked={selectedVideos.includes(video.videoId)}
                     onChange={() => {}}
                     className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
                   <a
-                    href={`https://youtube.com/watch?v=${video.id}`}
+                    href={`https://youtube.com/watch?v=${video.videoId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
