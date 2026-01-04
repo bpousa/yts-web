@@ -91,6 +91,39 @@ export type Database = {
         }
         Relationships: []
       }
+      pronunciation_rules: {
+        Row: {
+          id: string
+          user_id: string
+          find_text: string
+          replace_with: string
+          is_regex: boolean
+          is_enabled: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          find_text: string
+          replace_with: string
+          is_regex?: boolean
+          is_enabled?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          find_text?: string
+          replace_with?: string
+          is_regex?: boolean
+          is_enabled?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           created_at: string | null

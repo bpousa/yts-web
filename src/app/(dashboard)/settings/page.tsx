@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Edit2, Save, X, ExternalLink, Link as LinkIcon, Play, Pause, Mic, Library, Wand2, Star, StarOff } from 'lucide-react'
+import { Loader2, Trash2, Edit2, Save, X, ExternalLink, Link as LinkIcon, Play, Pause, Mic, Library, Wand2, Star, StarOff, Plus, Volume2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { SkeletonToneProfile } from '@/components/ui/Skeleton'
 import { VoiceLibraryModal, VoiceDesignerModal } from '@/components/voices'
@@ -32,8 +32,17 @@ interface SavedVoice {
   created_at: string
 }
 
+interface PronunciationRule {
+  id: string
+  find_text: string
+  replace_with: string
+  is_regex: boolean
+  is_enabled: boolean
+  created_at: string
+}
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'tones' | 'voices' | 'preferences'>('tones')
+  const [activeTab, setActiveTab] = useState<'tones' | 'voices' | 'pronunciation' | 'preferences'>('tones')
 
   // Tone Lab State
   const [sampleText, setSampleText] = useState('')
@@ -66,10 +75,19 @@ export default function SettingsPage() {
   const [showVoiceDesigner, setShowVoiceDesigner] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Fetch profiles and voices on mount
+  // Pronunciation State
+  const [pronunciationRules, setPronunciationRules] = useState<PronunciationRule[]>([])
+  const [loadingPronunciation, setLoadingPronunciation] = useState(true)
+  const [newFindText, setNewFindText] = useState('')
+  const [newReplaceWith, setNewReplaceWith] = useState('')
+  const [savingRule, setSavingRule] = useState(false)
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null)
+
+  // Fetch profiles, voices, and pronunciation rules on mount
   useEffect(() => {
     fetchProfiles()
     fetchVoices()
+    fetchPronunciationRules()
   }, [])
 
   // Cleanup audio on unmount
@@ -103,6 +121,72 @@ export default function SettingsPage() {
       console.error('Failed to fetch voices:', err)
     } finally {
       setLoadingVoices(false)
+    }
+  }
+
+  const fetchPronunciationRules = async () => {
+    try {
+      const response = await fetch('/api/pronunciation-rules')
+      const data = await response.json()
+      setPronunciationRules(data.rules || [])
+    } catch (err) {
+      console.error('Failed to fetch pronunciation rules:', err)
+    } finally {
+      setLoadingPronunciation(false)
+    }
+  }
+
+  const handleAddPronunciationRule = async () => {
+    if (!newFindText.trim() || !newReplaceWith.trim()) {
+      toast.error('Both fields are required')
+      return
+    }
+
+    setSavingRule(true)
+    try {
+      const response = await fetch('/api/pronunciation-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          find_text: newFindText.trim(),
+          replace_with: newReplaceWith.trim(),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to add rule')
+      }
+
+      setPronunciationRules((prev) => [data.rule, ...prev])
+      setNewFindText('')
+      setNewReplaceWith('')
+      toast.success('Pronunciation rule added')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add rule')
+    } finally {
+      setSavingRule(false)
+    }
+  }
+
+  const handleDeletePronunciationRule = async (id: string) => {
+    setDeletingRuleId(id)
+    try {
+      const response = await fetch(`/api/pronunciation-rules/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete rule')
+      }
+
+      setPronunciationRules((prev) => prev.filter((r) => r.id !== id))
+      toast.success('Rule deleted')
+    } catch (err) {
+      toast.error('Failed to delete rule')
+    } finally {
+      setDeletingRuleId(null)
     }
   }
 
@@ -409,6 +493,16 @@ export default function SettingsPage() {
           }`}
         >
           Voices
+        </button>
+        <button
+          onClick={() => setActiveTab('pronunciation')}
+          className={`px-4 py-2 font-medium rounded-lg transition-colors ${
+            activeTab === 'pronunciation'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+          }`}
+        >
+          Pronunciation
         </button>
         <button
           onClick={() => setActiveTab('preferences')}
@@ -873,6 +967,123 @@ export default function SettingsPage() {
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
             <p className="text-sm text-blue-700 dark:text-blue-300">
               <strong>Tip:</strong> Set default voices for Host 1 and Host 2 to automatically use them when generating podcast audio.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'pronunciation' && (
+        <div className="space-y-6">
+          {/* Add New Rule */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Add Pronunciation Rule
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Define how specific words or phrases should be pronounced in your podcasts.
+            </p>
+
+            <div className="flex gap-4 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Find Text
+                </label>
+                <input
+                  type="text"
+                  value={newFindText}
+                  onChange={(e) => setNewFindText(e.target.value)}
+                  placeholder="e.g., API, CEO, $500k"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white placeholder-gray-400"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Pronounce As
+                </label>
+                <input
+                  type="text"
+                  value={newReplaceWith}
+                  onChange={(e) => setNewReplaceWith(e.target.value)}
+                  placeholder="e.g., A P I, Chief Executive Officer, five hundred thousand dollars"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white placeholder-gray-400"
+                />
+              </div>
+              <button
+                onClick={handleAddPronunciationRule}
+                disabled={savingRule || !newFindText.trim() || !newReplaceWith.trim()}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
+              >
+                {savingRule ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                Add Rule
+              </button>
+            </div>
+          </div>
+
+          {/* Existing Rules */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Your Pronunciation Rules
+            </h2>
+
+            {loadingPronunciation ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="animate-pulse p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/4" />
+                      <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : pronunciationRules.length === 0 ? (
+              <div className="text-center py-12">
+                <Volume2 className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">
+                  No pronunciation rules yet. Add one above to customize how words are spoken.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {pronunciationRules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="font-mono text-sm bg-gray-200 dark:bg-gray-600 px-3 py-1 rounded text-gray-800 dark:text-gray-200">
+                        {rule.find_text}
+                      </span>
+                      <span className="text-gray-400">→</span>
+                      <span className="text-gray-700 dark:text-gray-300">
+                        {rule.replace_with}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePronunciationRule(rule.id)}
+                      disabled={deletingRuleId === rule.id}
+                      className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    >
+                      {deletingRuleId === rule.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              <strong>Built-in rules:</strong> Currency ($200k → two hundred thousand dollars), percentages, and number abbreviations are automatically converted. Add custom rules for brand names, acronyms, or technical terms.
             </p>
           </div>
         </div>
