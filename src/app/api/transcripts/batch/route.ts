@@ -97,6 +97,9 @@ export async function POST(request: NextRequest) {
 
     // Transform to camelCase to match UI expectations
     // UI expects `successful` to be an array (not a count)
+    console.log('[Batch Transcripts] Saved to DB:', savedTranscripts.length, 'transcripts')
+    console.log('[Batch Transcripts] Failed:', results.failed)
+
     const response = NextResponse.json({
       successful: savedTranscripts.map(t => ({
         id: t.id,
@@ -112,6 +115,7 @@ export async function POST(request: NextRequest) {
       failed: results.failed,
       total: urls.length,
     }, { status: 201 })
+    console.log('[Batch Transcripts] Response: successful=', savedTranscripts.length, 'failed=', results.failed.length)
     applyRateLimitHeaders(response.headers, rateLimitResult)
     return response
 
