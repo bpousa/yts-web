@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Generate a unique ID for custom content
     const customId = `custom-${Date.now()}`
 
-    // Save transcript to database
+    // Save transcript to database (video_url is empty for custom content)
     const { data: transcript, error: insertError } = await supabase
       .from('transcripts')
       .insert({
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         video_id: customId,
         video_title: title,
-        video_url: null,
+        video_url: '',
         content: content,
         source: 'custom',
       })
