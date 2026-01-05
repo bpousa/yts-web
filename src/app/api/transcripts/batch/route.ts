@@ -16,25 +16,31 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('[Batch Transcripts] Starting request...')
     const supabase = await createClient()
 
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
+      console.log('[Batch Transcripts] Unauthorized')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    console.log('[Batch Transcripts] User authenticated:', user.id)
 
     // Check rate limit (stricter for batch operations)
     const rateLimitResult = await checkRateLimit(user.id, 'transcriptsBatch')
     if (!rateLimitResult.success) {
+      console.log('[Batch Transcripts] Rate limited')
       return rateLimitExceededResponse(rateLimitResult)
     }
 
     // Parse and validate body
     const body = await request.json()
+    console.log('[Batch Transcripts] Request body:', JSON.stringify(body))
     const validationResult = batchFetchTranscriptSchema.safeParse(body)
 
     if (!validationResult.success) {
+      console.log('[Batch Transcripts] Validation failed:', validationResult.error.flatten())
       return NextResponse.json(
         { error: 'Validation failed', details: validationResult.error.flatten() },
         { status: 400 }
@@ -42,12 +48,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { urls, includeTimestamps, enableFallback, projectName } = validationResult.data
+    console.log('[Batch Transcripts] Fetching', urls.length, 'transcripts...')
 
     // Fetch all transcripts
     const results = await fetchTranscriptsBatch(urls, {
       includeTimestamps,
       enableFallback,
     })
+    console.log('[Batch Transcripts] Fetch complete. Success:', results.successful.length, 'Failed:', results.failed.length)
 
     // Create or get project
     const projectId = projectName

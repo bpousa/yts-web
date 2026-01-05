@@ -436,6 +436,7 @@ export async function fetchTranscriptsBatch(
   urls: string[],
   options: FetchTranscriptOptions = {}
 ): Promise<BatchTranscriptResult> {
+  console.log('[fetchTranscriptsBatch] Starting with', urls.length, 'URLs')
   const results: TranscriptResult[] = []
   const errors: Array<{ url: string; error: string }> = []
 
@@ -447,12 +448,20 @@ export async function fetchTranscriptsBatch(
     chunks.push(urls.slice(i, i + concurrency))
   }
 
-  for (const chunk of chunks) {
+  console.log('[fetchTranscriptsBatch] Processing', chunks.length, 'chunks')
+
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+    const chunk = chunks[chunkIndex]
+    console.log(`[fetchTranscriptsBatch] Processing chunk ${chunkIndex + 1}/${chunks.length}:`, chunk)
+
     const promises = chunk.map(async (url) => {
       try {
+        console.log('[fetchTranscriptsBatch] Fetching:', url)
         const result = await fetchTranscript(url, options)
+        console.log('[fetchTranscriptsBatch] Success:', url)
         results.push(result)
       } catch (error) {
+        console.log('[fetchTranscriptsBatch] Error for', url, ':', error instanceof Error ? error.message : String(error))
         errors.push({
           url,
           error: error instanceof Error ? error.message : String(error),
@@ -463,6 +472,7 @@ export async function fetchTranscriptsBatch(
     await Promise.all(promises)
   }
 
+  console.log('[fetchTranscriptsBatch] Complete. Success:', results.length, 'Failed:', errors.length)
   return {
     successful: results,
     failed: errors,
