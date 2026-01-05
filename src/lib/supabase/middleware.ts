@@ -36,18 +36,18 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
                       request.nextUrl.pathname.startsWith('/signup')
   const isCallbackRoute = request.nextUrl.pathname.startsWith('/callback')
-  const isPublicRoute = request.nextUrl.pathname === '/'
+  const isLandingPage = request.nextUrl.pathname === '/'
 
-  if (!user && !isAuthRoute && !isCallbackRoute && !isPublicRoute) {
+  if (!user && !isAuthRoute && !isCallbackRoute && !isLandingPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && isAuthRoute) {
+  // Redirect authenticated users away from auth pages and landing page
+  if (user && (isAuthRoute || isLandingPage)) {
     const url = request.nextUrl.clone()
-    url.pathname = '/transcripts'
+    url.pathname = '/home'
     return NextResponse.redirect(url)
   }
 
