@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { FileText, Download, Loader2, AlertCircle, CheckCircle, ArrowRight, FolderOpen } from 'lucide-react'
 
@@ -23,6 +23,7 @@ interface BatchResult {
 
 export default function FetchPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [urls, setUrls] = useState('')
   const [projectName, setProjectName] = useState('')
   const [includeTimestamps, setIncludeTimestamps] = useState(false)
@@ -30,6 +31,14 @@ export default function FetchPage() {
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<TranscriptResult[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  // Pre-fill URLs from query parameter (from search page)
+  useEffect(() => {
+    const urlsParam = searchParams.get('urls')
+    if (urlsParam) {
+      setUrls(decodeURIComponent(urlsParam))
+    }
+  }, [searchParams])
 
   const handleFetch = async () => {
     const urlList = urls.split('\n').map(u => u.trim()).filter(u => u.length > 0)

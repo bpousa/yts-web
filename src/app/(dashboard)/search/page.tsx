@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Search, Filter, Plus, Loader2, ExternalLink, Eye, Calendar } from 'lucide-react'
 import { SkeletonVideoResult } from '@/components/ui/Skeleton'
@@ -21,6 +22,7 @@ interface VideoResult {
 }
 
 export default function SearchPage() {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [maxResults, setMaxResults] = useState(10)
   const [sortBy, setSortBy] = useState<'relevance' | 'date' | 'rating' | 'viewCount' | 'title'>('relevance')
@@ -31,7 +33,6 @@ export default function SearchPage() {
   const [results, setResults] = useState<VideoResult[]>([])
   const [selectedVideos, setSelectedVideos] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [addingToQueue, setAddingToQueue] = useState(false)
 
   const handleSearch = async () => {
     if (!query.trim()) return
@@ -70,47 +71,16 @@ export default function SearchPage() {
     )
   }
 
-  const addToQueue = async () => {
+  const addToQueue = () => {
     if (selectedVideos.length === 0) {
       toast.error('No videos selected')
       return
     }
 
-    setAddingToQueue(true)
-
-    try {
-      const urls = selectedVideos.map(id => `https://www.youtube.com/watch?v=${id}`)
-
-      const response = await fetch('/api/transcripts/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          urls,
-          includeTimestamps: false,
-          enableFallback: true,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to add to queue')
-      }
-
-      const data = await response.json()
-      const successCount = data.successful?.length || 0
-      const failCount = data.failed?.length || 0
-
-      if (successCount > 0) {
-        toast.success(`Added ${successCount} transcript(s) to your library`)
-      }
-      if (failCount > 0) {
-        toast.error(`${failCount} video(s) failed to fetch`)
-      }
-      setSelectedVideos([])
-    } catch (err) {
-      toast.error('Failed to add videos to transcript queue')
-    } finally {
-      setAddingToQueue(false)
-    }
+    // Build URLs and redirect to fetch page
+    const urls = selectedVideos.map(id => `https://www.youtube.com/watch?v=${id}`)
+    const urlsParam = encodeURIComponent(urls.join('\n'))
+    router.push(`/fetch?urls=${urlsParam}`)
   }
 
   const formatViewCount = (count?: string) => {
@@ -264,20 +234,10 @@ export default function SearchPage() {
             </span>
             <button
               onClick={addToQueue}
-              disabled={addingToQueue}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
             >
-              {addingToQueue ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  Add to Transcript Queue
-                </>
-              )}
+              <Plus className="w-4 h-4" />
+              Add to Transcript Queue
             </button>
           </div>
         )}
