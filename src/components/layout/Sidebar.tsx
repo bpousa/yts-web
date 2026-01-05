@@ -15,14 +15,18 @@ import {
   Mic,
   Download,
   FolderOpen,
+  PenTool,
+  Home,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const navigation = [
+  { name: 'Home', href: '/home', icon: Home },
   { name: 'Fetch Transcripts', href: '/fetch', icon: Download },
   { name: 'Library', href: '/transcripts', icon: FolderOpen },
   { name: 'Content Generator', href: '/generator', icon: Sparkles },
   { name: 'Podcast', href: '/podcast', icon: Mic },
+  { name: 'Script Studio', href: '/studio', icon: PenTool },
   { name: 'Search Videos', href: '/search', icon: Search },
   { name: 'Webhooks', href: '/webhooks', icon: Webhook },
   { name: 'Settings', href: '/settings', icon: Settings },
