@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Wand2, Play, Download, Loader2, AlertCircle, CheckCircle } from 'lucide-react'
+import { Wand2, Play, Download, Loader2, AlertCircle, CheckCircle, User, Users } from 'lucide-react'
 import ScriptInput from '@/components/studio/ScriptInput'
 import VoiceSelector from '@/components/studio/VoiceSelector'
 import ScriptPreview from '@/components/studio/ScriptPreview'
@@ -25,9 +25,13 @@ interface CleanupResponse {
 }
 
 type Step = 'input' | 'preview' | 'generating' | 'complete'
+type Mode = 'single' | 'podcast'
 
 export default function StudioPage() {
   const [script, setScript] = useState('')
+  const [mode, setMode] = useState<Mode>('single')
+  const [speaker1Name, setSpeaker1Name] = useState('Narrator')
+  const [speaker2Name, setSpeaker2Name] = useState('Guest')
   const [step, setStep] = useState<Step>('input')
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +59,12 @@ export default function StudioPage() {
       const response = await fetch('/api/scripts/cleanup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ script, fixTypos: true }),
+        body: JSON.stringify({
+          script,
+          mode,
+          speaker1Name: speaker1Name || 'Narrator',
+          speaker2Name: speaker2Name || 'Guest',
+        }),
       })
 
       if (!response.ok) {
@@ -169,6 +178,9 @@ export default function StudioPage() {
 
   const handleStartOver = () => {
     setScript('')
+    setMode('single')
+    setSpeaker1Name('Narrator')
+    setSpeaker2Name('Guest')
     setStep('input')
     setCleanupData(null)
     setVoiceSelections({})
@@ -252,6 +264,87 @@ export default function StudioPage() {
       {/* Step 1: Script Input */}
       {step === 'input' && (
         <div className="space-y-6">
+          {/* Mode Selection */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Select Mode
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <button
+                onClick={() => setMode('single')}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  mode === 'single'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${mode === 'single' ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                    <User className={`w-5 h-5 ${mode === 'single' ? 'text-blue-600' : 'text-gray-500'}`} />
+                  </div>
+                  <span className={`font-medium ${mode === 'single' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-white'}`}>
+                    Single Voice
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  One narrator reads the entire script
+                </p>
+              </button>
+
+              <button
+                onClick={() => setMode('podcast')}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  mode === 'podcast'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${mode === 'podcast' ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                    <Users className={`w-5 h-5 ${mode === 'podcast' ? 'text-blue-600' : 'text-gray-500'}`} />
+                  </div>
+                  <span className={`font-medium ${mode === 'podcast' ? 'text-blue-700 dark:text-blue-300' : 'text-gray-900 dark:text-white'}`}>
+                    Two Voices (Podcast)
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Two speakers for dialogue or interviews
+                </p>
+              </button>
+            </div>
+
+            {/* Speaker Names */}
+            <div className={`mt-4 grid gap-4 ${mode === 'podcast' ? 'md:grid-cols-2' : ''}`}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {mode === 'single' ? 'Speaker Name' : 'Speaker 1 Name'}
+                </label>
+                <input
+                  type="text"
+                  value={speaker1Name}
+                  onChange={(e) => setSpeaker1Name(e.target.value)}
+                  placeholder="Narrator"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              {mode === 'podcast' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Speaker 2 Name
+                  </label>
+                  <input
+                    type="text"
+                    value={speaker2Name}
+                    onChange={(e) => setSpeaker2Name(e.target.value)}
+                    placeholder="Guest"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Script Input */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <ScriptInput
               value={script}
@@ -274,7 +367,7 @@ export default function StudioPage() {
               ) : (
                 <>
                   <Wand2 className="w-5 h-5" />
-                  Clean Up & Preview
+                  Process & Preview
                 </>
               )}
             </button>
@@ -288,7 +381,7 @@ export default function StudioPage() {
           {/* Voice Selection */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Select Voices
+              Select Voice{cleanupData.speakers.length > 1 ? 's' : ''}
             </h2>
             <div className={`grid gap-4 ${cleanupData.speakers.length > 1 ? 'md:grid-cols-2' : ''}`}>
               {cleanupData.speakers.map((speaker, index) => (

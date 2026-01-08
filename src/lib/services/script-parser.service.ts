@@ -145,38 +145,7 @@ export function preprocessTextForTTS(text: string): string {
 }
 
 /**
- * Detect speaker patterns in a script
- * Supports:
- * - **Speaker Name:** text (markdown)
- * - SPEAKER NAME: text (screenplay)
- * - [Speaker Name]: text (bracketed name)
- */
-function detectSpeakerPattern(script: string): RegExp | null {
-  // Check for markdown style: **Speaker Name:**
-  if (/^\*\*[^*]+\*\*:\s*$/m.test(script)) {
-    return /^\*\*([^*]+)\*\*:\s*$/;
-  }
-
-  // Check for screenplay style: SPEAKER NAME:
-  if (/^[A-Z][A-Z\s\.]+:\s*$/m.test(script)) {
-    return /^([A-Z][A-Z\s\.]+):\s*$/;
-  }
-
-  // Check for bracketed style: [Speaker Name]:
-  if (/^\[[^\]]+\]:\s*$/m.test(script)) {
-    return /^\[([^\]]+)\]:\s*$/;
-  }
-
-  // Check for simple colon style: Speaker Name:
-  if (/^[A-Za-z][A-Za-z\s\.]+:\s*$/m.test(script)) {
-    return /^([A-Za-z][A-Za-z\s\.]+):\s*$/;
-  }
-
-  return null;
-}
-
-/**
- * Parse a script into speaker segments
+ * Parse a script into speaker segments (auto-detect mode)
  */
 export function parseScript(script: string): ParsedScript {
   const lines = script.split('\n');
@@ -301,4 +270,183 @@ export function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Parse a script with explicit mode selection
+ * - single: All content goes to one speaker
+ * - podcast: Try to detect speakers, or alternate between two
+ */
+export function parseScriptWithMode(
+  script: string,
+  mode: 'single' | 'podcast',
+  speaker1Name: string = 'Narrator',
+  speaker2Name: string = 'Guest'
+): ParsedScript {
+  if (mode === 'single') {
+    // Single mode: all content goes to one speaker
+    const fullText = script.trim();
+    if (!fullText) {
+      return { mode: 'single', speakers: [speaker1Name], segments: [] };
+    }
+
+    return {
+      mode: 'single',
+      speakers: [speaker1Name],
+      segments: [{
+        speaker: speaker1Name,
+        text: fullText,
+        originalText: fullText,
+        lineNumber: 1,
+      }],
+    };
+  }
+
+  // Podcast mode: try to detect speaker patterns
+  const lines = script.split('\n');
+  const segments: ScriptSegment[] = [];
+
+  // Try to detect speaker pattern
+  const speakerPattern = detectSpeakerPattern(script);
+
+  if (speakerPattern) {
+    // Parse with detected speaker pattern
+    const speakerMap = new Map<string, string>(); // original -> mapped name
+    let speakerCount = 0;
+
+    let currentSpeaker: string | null = null;
+    let currentMappedSpeaker: string | null = null;
+    let currentText: string[] = [];
+    let currentLineNumber = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(speakerPattern);
+
+      if (match) {
+        // Save previous segment
+        if (currentMappedSpeaker && currentText.length > 0) {
+          const text = currentText.join('\n').trim();
+          if (text) {
+            segments.push({
+              speaker: currentMappedSpeaker,
+              text,
+              originalText: text,
+              lineNumber: currentLineNumber,
+            });
+          }
+        }
+
+        // Get or create mapped speaker name
+        const originalSpeaker = match[1].trim();
+        if (!speakerMap.has(originalSpeaker)) {
+          speakerCount++;
+          // Map to provided names (max 2 speakers)
+          if (speakerCount === 1) {
+            speakerMap.set(originalSpeaker, speaker1Name);
+          } else {
+            speakerMap.set(originalSpeaker, speaker2Name);
+          }
+        }
+
+        currentSpeaker = originalSpeaker;
+        currentMappedSpeaker = speakerMap.get(originalSpeaker) || speaker1Name;
+        currentText = [];
+        currentLineNumber = i + 1;
+      } else if (currentSpeaker) {
+        // Skip metadata lines
+        if (line.startsWith('# ') ||
+            line.startsWith('---') ||
+            line.match(/^\*\*\[SOUND EFFECT:/i) ||
+            line.match(/^\*\*Episode:/i) ||
+            line.match(/^\*\*Host:/i) ||
+            line.match(/^\*\*Guest:/i)) {
+          continue;
+        }
+
+        currentText.push(line);
+      }
+    }
+
+    // Don't forget the last segment
+    if (currentMappedSpeaker && currentText.length > 0) {
+      const text = currentText.join('\n').trim();
+      if (text) {
+        segments.push({
+          speaker: currentMappedSpeaker,
+          text,
+          originalText: text,
+          lineNumber: currentLineNumber,
+        });
+      }
+    }
+
+    // Get unique speakers used
+    const usedSpeakers = [...new Set(segments.map(s => s.speaker))];
+
+    return {
+      mode: 'podcast',
+      speakers: usedSpeakers.length > 0 ? usedSpeakers : [speaker1Name, speaker2Name],
+      segments,
+    };
+  }
+
+  // No speaker pattern detected - split by paragraphs and alternate speakers
+  const paragraphs = script.split(/\n\s*\n/).filter(p => p.trim());
+
+  if (paragraphs.length === 0) {
+    return {
+      mode: 'podcast',
+      speakers: [speaker1Name, speaker2Name],
+      segments: [],
+    };
+  }
+
+  // Alternate between speakers for each paragraph
+  let lineNumber = 1;
+  for (let i = 0; i < paragraphs.length; i++) {
+    const text = paragraphs[i].trim();
+    if (text) {
+      segments.push({
+        speaker: i % 2 === 0 ? speaker1Name : speaker2Name,
+        text,
+        originalText: text,
+        lineNumber,
+      });
+    }
+    lineNumber += paragraphs[i].split('\n').length + 1;
+  }
+
+  return {
+    mode: 'podcast',
+    speakers: [speaker1Name, speaker2Name],
+    segments,
+  };
+}
+
+/**
+ * Detect speaker patterns in a script (internal helper)
+ */
+function detectSpeakerPattern(script: string): RegExp | null {
+  // Check for markdown style: **Speaker Name:**
+  if (/^\*\*[^*]+\*\*:\s*$/m.test(script)) {
+    return /^\*\*([^*]+)\*\*:\s*$/;
+  }
+
+  // Check for screenplay style: SPEAKER NAME:
+  if (/^[A-Z][A-Z\s\.]+:\s*$/m.test(script)) {
+    return /^([A-Z][A-Z\s\.]+):\s*$/;
+  }
+
+  // Check for bracketed style: [Speaker Name]:
+  if (/^\[[^\]]+\]:\s*$/m.test(script)) {
+    return /^\[([^\]]+)\]:\s*$/;
+  }
+
+  // Check for simple colon style: Speaker Name:
+  if (/^[A-Za-z][A-Za-z\s\.]+:\s*$/m.test(script)) {
+    return /^([A-Za-z][A-Za-z\s\.]+):\s*$/;
+  }
+
+  return null;
 }
